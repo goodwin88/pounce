@@ -20,7 +20,7 @@ export function isInBorderlands(pos, center) {
 export function getPounceTargets(fromPos, hunters, center, tigerRadius = 30) {
     return hunters
         .filter(h => {
-            // Skip incapacitated/removed hunters
+            // Skip incapacitated or removed hunters
             if (h.incapacitated || h.isRemoved) return false;
             
             // Must be in Clearing to be pounced
@@ -48,7 +48,6 @@ export function isPointInTriangle(point, vertices) {
 }
 
 export function checkHunterVictory(tiger, hunters, center) {
-    // Only active hunters in Clearing can form triangle
     const activeInClearing = hunters.filter(h => 
         !h.incapacitated && !h.isRemoved && isInClearing(h.pos, center)
     );
@@ -78,6 +77,5 @@ export function checkHunterVictory(tiger, hunters, center) {
 }
 
 export function checkTigerVictory(hunters) {
-    // Tiger wins if ALL hunters are either incapacitated or removed
     return hunters.every(h => h.incapacitated || h.isRemoved);
 }
