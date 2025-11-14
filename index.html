@@ -331,17 +331,21 @@
                 }
 
                 endTurn() {
-                    // If all Hunters moved, switch to Tiger
-                    if (this.turn === 'HUNTERS' && this.huntersMoved.size === this.hunters.length) {
-                        this.turn = 'TIGER';
-                        this.huntersMoved.clear();
-                        this.hunters.forEach(h => h.hasMoved = false);
-                        logStatus("All Hunters moved. Tiger's turn - Hunters refreshed!");
-                    }
-                    // If Tiger just moved, Hunters' turn is already set
-                    
-                    this.draw();
-                }
+    if (this.turn === 'HUNTERS' && this.huntersMoved.size === this.hunters.length) {
+        // Hunter round complete - switch to Tiger
+        this.turn = 'TIGER';
+        this.huntersMoved.clear();
+        this.hunters.forEach(h => h.hasMoved = false);
+        logStatus("All Hunters moved. Tiger's turn - Hunters refreshed!");
+    } else if (this.turn === 'TIGER') {
+        // Tiger's move complete - switch to Hunters (THIS WAS MISSING)
+        this.turn = 'HUNTERS';
+        logStatus("Tiger moved. Hunters' turn.");
+    }
+    // Otherwise: mid-Hunter round, stay on HUNTERS
+    
+    this.draw();
+}
 
                 draw() {
                     // Clear
