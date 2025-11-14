@@ -19,9 +19,21 @@ export function isInBorderlands(pos, center) {
 
 export function getPounceTargets(fromPos, hunters, center) {
     return hunters
-        .filter(h => !h.incapacitated && 
-                     distance(fromPos, h.pos) <= HAND_SPAN &&
-                     isInClearing(h.pos, center))
+        .filter(h => {
+            // Skip incapacitated or removed hunters
+            if (h.incapacitated || h.isRemoved) return false;
+            
+            // Must be in Clearing to be pounced
+            if (!isInClearing(h.pos, center)) return false;
+            
+            // Edge-to-edge collision detection
+            const centerDistance = distance(fromPos, h.pos);
+            // Tiger radius is 30, Hunter radius is 15
+            const edgeDistance = centerDistance - (fromPos.radius || 30) - h.radius;
+            
+            // If edges overlap or touch, it's a valid pounce
+            return edgeDistance <= 0;
+        })
         .sort((a, b) => distance(fromPos, a.pos) - distance(fromPos, b.pos));
 }
 
@@ -37,24 +49,25 @@ export function isPointInTriangle(point, vertices) {
 }
 
 export function checkHunterVictory(tiger, hunters, center) {
+    // Only active hunters in Clearing can form triangle
     const activeInClearing = hunters.filter(h => 
-        !h.incapacitated && isInClearing(h.pos, center)
+        !h.incapacitated && !h.isRemoved && isInClearing(h.pos, center)
     );
     
-    if (activeInClearing.length < 3) return false;
+    if (activeInClearing.length < 3) return { won: false };
     
-    // Check all 3-hunter combinations
+    // Check all possible 3-hunter combinations
     for (let i = 0; i < activeInClearing.length - 2; i++) {
         for (let j = i + 1; j < activeInClearing.length - 1; j++) {
             for (let k = j + 1; k < activeInClearing.length; k++) {
                 const combo = [activeInClearing[i], activeInClearing[j], activeInClearing[k]];
                 const vertices = combo.map(h => h.pos);
                 
-                // Check if Tiger is in range of all three
+                // Tiger must be within HAND_SPAN of all three
                 const allInRange = combo.every(h => distance(tiger.pos, h.pos) <= HAND_SPAN);
                 if (!allInRange) continue;
                 
-                // Check if Tiger is inside triangle
+                // Tiger must be inside triangle formed by hunters
                 if (isPointInTriangle(tiger.pos, vertices)) {
                     return { won: true, hunters: combo };
                 }
@@ -62,9 +75,10 @@ export function checkHunterVictory(tiger, hunters, center) {
         }
     }
     
-    return false;
+    return { won: false };
 }
 
 export function checkTigerVictory(hunters) {
-    return hunters.every(h => h.incapacitated);
+    // Tiger wins if ALL hunters are either incapacitated or removed
+    return hunters.every(h => h.incapacitated || h.isRemoved);
 }
