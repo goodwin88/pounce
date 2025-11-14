@@ -1,52 +1,32 @@
-import { isInClearing, isInBorderlands, CLEARING_RADIUS, BORDERLANDS_WIDTH, HAND_SPAN } from './systems.js';
+import * as Systems from './systems.js';
 
 export class Renderer {
-    constructor(canvas) {
-        this.canvas = canvas;
-        this.ctx = canvas.getContext('2d');
-        this.center = new Vector2(canvas.width / 2, canvas.height / 2);
-    }
+    // ... existing constructor and methods ...
     
-    clear() {
-        this.ctx.fillStyle = '#ecf0f1';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    }
-    
-    drawZones() {
-        // Clearing
-        this.ctx.strokeStyle = '#f39c12';
-        this.ctx.lineWidth = 3;
+    drawRoarEffect(tigerPos, hunters, center) {
+        const threatened = hunters.filter(h => 
+            !h.incapacitated && !h.isRemoved && 
+            Systems.distance(tigerPos, h.pos) <= Systems.HAND_SPAN &&
+            Systems.isInClearing(h.pos, center)
+        );
+        
+        if (!threatened.length) return;
+        
+        // Pulsing red warning ring
+        const pulse = Math.sin(Date.now() / 100) * 0.3 + 0.7;
+        this.ctx.strokeStyle = `rgba(231, 76, 60, ${pulse})`;
+        this.ctx.lineWidth = 4;
         this.ctx.beginPath();
-        this.ctx.arc(this.center.x, this.center.y, CLEARING_RADIUS, 0, Math.PI * 2);
+        this.ctx.arc(tigerPos.x, tigerPos.y, Systems.HAND_SPAN, 0, Math.PI * 2);
         this.ctx.stroke();
         
-        // Borderlands outer boundary
-        this.ctx.strokeStyle = '#3498db';
-        this.ctx.lineWidth = 2;
-        this.ctx.beginPath();
-        this.ctx.arc(this.center.x, this.center.y, CLEARING_RADIUS + BORDERLANDS_WIDTH, 0, Math.PI * 2);
-        this.ctx.stroke();
-        
-        // Labels
-        this.ctx.fillStyle = '#f39c12';
-        this.ctx.font = '16px Arial';
-        this.ctx.fillText('Clearing', 10, 30);
-        this.ctx.fillStyle = '#3498db';
-        this.ctx.fillText('Borderlands', 10, 55);
-    }
-    
-    drawRangeIndicator(pos, range) {
-        this.ctx.strokeStyle = 'rgba(231, 76, 60, 0.3)';
-        this.ctx.lineWidth = 2;
-        this.ctx.beginPath();
-        this.ctx.arc(pos.x, pos.y, range, 0, Math.PI * 2);
-        this.ctx.stroke();
-    }
-    
-    draw(pieces) {
-        this.clear();
-        this.drawZones();
-        
-        pieces.forEach(p => p.draw(this.ctx));
+        // Flash threatened hunters
+        threatened.forEach(h => {
+            this.ctx.strokeStyle = `rgba(231, 76, 60, ${pulse})`;
+            this.ctx.lineWidth = 3;
+            this.ctx.beginPath();
+            this.ctx.arc(h.pos.x, h.pos.y, h.radius + 5, 0, Math.PI * 2);
+            this.ctx.stroke();
+        });
     }
 }
