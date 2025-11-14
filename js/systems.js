@@ -3,7 +3,6 @@ import { Vector2 } from './entities.js';
 export const HAND_SPAN = 150;
 export const CLEARING_RADIUS = 300;
 export const BORDERLANDS_WIDTH = HAND_SPAN;
-export const POUNCE_RANGE = 50; // Slightly forgiving: 50px instead of strict 45
 
 export function distance(p1, p2) {
     return p1.distanceTo(p2);
@@ -18,20 +17,26 @@ export function isInBorderlands(pos, center) {
     return dist > CLEARING_RADIUS && dist <= CLEARING_RADIUS + BORDERLANDS_WIDTH;
 }
 
-export function getPounceTargets(fromPos, hunters, center, tigerRadius = 30) {
-    const targets = hunters
+// NEW: Find hunters landed on (collision)
+export function getLandedHunter(tigerPos, hunters, tigerRadius) {
+    return hunters.find(h => 
+        !h.incapacitated && !h.isRemoved && 
+        distance(tigerPos, h.pos) <= tigerRadius + h.radius
+    );
+}
+
+// NEW: Find hunters in pounce range (distance-based)
+export function getHuntersInPounceRange(fromPos, hunters, center, range) {
+    return hunters
         .filter(h => {
             if (h.incapacitated || h.isRemoved) return false;
             if (!isInClearing(h.pos, center)) return false;
             
-            const centerDistance = distance(fromPos, h.pos);
-            const edgeDistance = centerDistance - tigerRadius - h.radius;
-            
-            return edgeDistance <= 5; // 5px tolerance
+            // Distance-based: within HAND_SPAN
+            const dist = distance(fromPos, h.pos);
+            return dist <= range;
         })
         .sort((a, b) => distance(fromPos, a.pos) - distance(fromPos, b.pos));
-    
-    return targets;
 }
 
 export function isPointInTriangle(point, vertices) {
