@@ -3,14 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tiger & Hunters - Forced Load</title>
+    <title>Tiger & Hunters v1.1</title>
     <style>
-        body { margin: 0; padding: 20px; background: #2c3e50; }
-        #game-container { display: flex; gap: 20px; background: white; padding: 20px; }
+        body { margin: 0; padding: 20px; background: #2c3e50; font-family: sans-serif; }
+        #game-container { display: flex; gap: 20px; background: white; padding: 20px; border-radius: 10px; }
         canvas { border: 2px solid #34495e; cursor: pointer; }
-        #ui { width: 280px; font-family: sans-serif; }
-        #status { background: #ecf0f1; padding: 10px; margin: 10px 0; min-height: 60px; }
-        #error-dump { background: #e74c3c; color: white; padding: 10px; margin: 10px 0; white-space: pre-wrap; display: none; }
+        #ui { width: 280px; }
+        #status { background: #ecf0f1; padding: 10px; border-radius: 5px; margin: 10px 0; min-height: 60px; font-size: 14px; }
+        .error { color: #e74c3c; font-weight: bold; }
+        .success { color: #27ae60; font-weight: bold; }
+        #turn-indicator { color: #e74c3c; margin: 0 0 10px 0; font-size: 24px; }
+        #reset-btn { width: 100%; padding: 10px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -19,23 +22,19 @@
         <div id="ui">
             <h1 id="turn-indicator">Loading... <span id="countdown"></span></h1>
             <div id="status">Forcing script execution... <span id="progress"></span></div>
-            <div id="error-dump"></div>
             <button id="reset-btn">New Game</button>
+            <div id="rules">
+                <h3>How to Play</h3>
+                <p><strong>1. Click a piece</strong> → Yellow ring</p>
+                <p><strong>2. Click inside ring</strong> to move</p>
+                <p><strong>3. Hunters darken</strong> after moving</p>
+                <p><strong>4. Green net</strong> appears on Hunter win</p>
+            </div>
         </div>
     </div>
 
     <script>
-        // ========== IMMEDIATE ERROR HANDLING ==========
-        window.onerror = function(msg, url, line) {
-            const dump = document.getElementById('error-dump');
-            dump.style.display = 'block';
-            dump.textContent = `FATAL ERROR:\n${msg}\nLine ${line}`;
-            document.getElementById('status').textContent = "JavaScript crashed!";
-            document.getElementById('turn-indicator').textContent = "ERROR";
-            return false;
-        };
-
-        // ========== COUNTDOWN VISUAL ==========
+        // ========== COUNTDOWN TO FORCE EXECUTION ==========
         let countdown = 5;
         const countdownEl = document.getElementById('countdown');
         const progressEl = document.getElementById('progress');
@@ -48,38 +47,82 @@
             if (countdown >= 0) {
                 setTimeout(tick, 200);
             } else {
-                // FORCE execution here
+                // EXECUTE GAME CODE HERE
                 try {
                     main();
                 } catch (e) {
-                    window.onerror(e.message, '', e.stack);
+                    document.getElementById('status').innerHTML = `<span class="error">CRASH: ${e.message}</span>`;
                 }
             }
         }
         tick();
 
-        // ========== CORE GAME (Simplified) ==========
+        // ========== FULL GAME CODE ==========
         function main() {
-            document.getElementById('status').textContent = "Executing main()...";
-            
+            document.getElementById('status').textContent = "Creating game objects...";
+
+            // Core types
             class Vector2 {
                 constructor(x, y) { this.x = x; this.y = y; }
                 distanceTo(other) { return Math.sqrt((this.x - other.x) ** 2 + (this.y - other.y) ** 2); }
+                clone() { return new Vector2(this.x, this.y); }
             }
 
             class Piece {
-                constructor(pos, color) {
+                constructor(pos, color, isTiger = false) {
                     this.pos = pos;
+                    this.originalPos = pos.clone();
                     this.color = color;
+                    this.isTiger = isTiger;
                     this.incapacitated = false;
+                    this.hasMoved = false;
                     this.radius = 15;
+                    this.isSelected = false;
+                    this.isVictoryPiece = false;
                 }
                 
                 draw(ctx) {
-                    ctx.fillStyle = this.color;
+                    if (this.isVictoryPiece) {
+                        ctx.strokeStyle = '#2ecc71';
+                        ctx.lineWidth = 6;
+                        ctx.beginPath();
+                        ctx.arc(this.pos.x, this.pos.y, this.radius + 10, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+
+                    if (this.isSelected) {
+                        ctx.strokeStyle = '#f1c40f';
+                        ctx.lineWidth = 4;
+                        ctx.beginPath();
+                        ctx.arc(this.pos.x, this.pos.y, this.radius + 8, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+
+                    ctx.save();
+                    if (this.incapacitated) {
+                        ctx.fillStyle = '#7f8c8d';
+                    } else if (this.hasMoved) {
+                        ctx.fillStyle = this.color;
+                        ctx.globalAlpha = 0.4;
+                    } else {
+                        ctx.fillStyle = this.color;
+                    }
+                    
                     ctx.beginPath();
                     ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
                     ctx.fill();
+                    ctx.restore();
+
+                    if (this.incapacitated) {
+                        ctx.strokeStyle = '#c0392b';
+                        ctx.lineWidth = 3;
+                        ctx.beginPath();
+                        ctx.moveTo(this.pos.x - 10, this.pos.y - 10);
+                        ctx.lineTo(this.pos.x + 10, this.pos.y + 10);
+                        ctx.moveTo(this.pos.x - 10, this.pos.y + 10);
+                        ctx.lineTo(this.pos.x + 10, this.pos.y - 10);
+                        ctx.stroke();
+                    }
                 }
 
                 contains(point) {
@@ -87,67 +130,289 @@
                 }
             }
 
+            // Constants
             const HAND_SPAN = 150;
+            const CLEARING_RADIUS = 300;
+            const BORDERLANDS_WIDTH = HAND_SPAN;
             const CENTER = new Vector2(400, 400);
 
             class Game {
                 constructor() {
-                    document.getElementById('status').textContent = "Creating Game object...";
+                    document.getElementById('status').textContent = "Creating Game instance...";
                     
                     this.canvas = document.getElementById('gameCanvas');
                     this.ctx = this.canvas.getContext('2d');
-                    this.tiger = new Piece(CENTER, '#e74c3c');
-                    this.hunters = [new Piece(new Vector2(500, 400), '#27ae60')];
-                    this.turn = 'TIGER';
+                    this.center = CENTER;
+                    this.selectedPiece = null;
+                    this.winner = null;
+                    this.winningHunters = null;
                     
+                    this.reset();
+                    this.setupInput();
+                    
+                    document.getElementById('status').textContent = "Game ready! Click the RED TIGER.";
+                    this.draw();
+                }
+
+                reset() {
+                    this.tiger = new Piece(this.center.clone(), '#e74c3c', true);
+                    this.hunters = [];
+                    for (let i = 0; i < 5; i++) {
+                        const angle = (i * 72) * Math.PI / 180;
+                        const dist = CLEARING_RADIUS + 75;
+                        const pos = new Vector2(
+                            this.center.x + Math.cos(angle) * dist,
+                            this.center.y + Math.sin(angle) * dist
+                        );
+                        this.hunters.push(new Piece(pos, '#27ae60'));
+                    }
+                    
+                    this.turn = 'TIGER';
+                    this.huntersMoved = new Set();
+                    this.winner = null;
+                    this.winningHunters = null;
+                    this.selectedPiece = null;
+                }
+
+                setupInput() {
                     this.canvas.addEventListener('click', (e) => {
-                        const pos = new Vector2(e.clientX - this.canvas.offsetLeft, e.clientY - this.canvas.offsetTop);
+                        if (this.winner) return;
                         
-                        if (this.tiger.contains(pos)) {
-                            this.tiger.isSelected = true;
-                        } else if (this.hunters[0].contains(pos)) {
-                            this.hunters[0].isSelected = true;
-                        } else if (this.tiger.isSelected && this.tiger.pos.distanceTo(pos) <= HAND_SPAN) {
-                            this.tiger.pos = pos;
-                            this.tiger.isSelected = false;
-                        } else if (this.hunters[0].isSelected && this.hunters[0].pos.distanceTo(pos) <= HAND_SPAN) {
-                            this.hunters[0].pos = pos;
-                            this.hunters[0].isSelected = false;
+                        const rect = this.canvas.getBoundingClientRect();
+                        const clickPos = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
+                        
+                        if (!this.selectedPiece) {
+                            const piece = this.getPieceAt(clickPos);
+                            if (piece) this.selectPiece(piece);
+                        } else {
+                            this.handleMoveClick(clickPos);
+                        }
+                    });
+                }
+
+                getPieceAt(pos) {
+                    if (this.tiger.contains(pos)) return this.tiger;
+                    for (let h of this.hunters) {
+                        if (!h.incapacitated && h.contains(pos)) return h;
+                    }
+                    return null;
+                }
+
+                selectPiece(piece) {
+                    if (this.turn === 'TIGER' && !piece.isTiger) {
+                        logStatus("Tiger's turn! Click red piece.", "error");
+                        return;
+                    }
+                    if (this.turn === 'HUNTERS' && piece.isTiger) {
+                        logStatus("Hunters' turn! Click green piece.", "error");
+                        return;
+                    }
+                    if (this.turn === 'HUNTERS' && this.huntersMoved.has(piece)) {
+                        logStatus("That Hunter already moved!", "error");
+                        return;
+                    }
+
+                    if (this.selectedPiece) this.selectedPiece.isSelected = false;
+                    this.selectedPiece = piece;
+                    piece.isSelected = true;
+
+                    const movesLeft = this.turn === 'HUNTERS' ? `(${5 - this.huntersMoved.size})` : '';
+                    logStatus(`${piece.isTiger ? 'Tiger' : 'Hunter'} selected ${movesLeft}. Click inside ring.`, "success");
+                    this.draw();
+                }
+
+                handleMoveClick(clickPos) {
+                    const origin = this.selectedPiece.pos;
+                    const dist = origin.distanceTo(clickPos);
+                    
+                    if (dist > HAND_SPAN) {
+                        this.selectedPiece.isSelected = false;
+                        this.selectedPiece = null;
+                        logStatus("Move cancelled. Click outside ring to deselect.", "info");
+                        this.draw();
+                        return;
+                    }
+                    
+                    // Clamp to max range
+                    let targetPos = clickPos;
+                    if (dist >= HAND_SPAN) {
+                        const angle = Math.atan2(clickPos.y - origin.y, clickPos.x - origin.x);
+                        targetPos = new Vector2(
+                            origin.x + Math.cos(angle) * HAND_SPAN,
+                            origin.y + Math.sin(angle) * HAND_SPAN
+                        );
+                        logStatus("Max range reached!", "error");
+                    }
+                    
+                    // Zone validation
+                    if (this.selectedPiece.isTiger && targetPos.distanceTo(this.center) > CLEARING_RADIUS) {
+                        logStatus("Tiger cannot leave Clearing!", "error");
+                        return;
+                    }
+                    
+                    if (targetPos.distanceTo(this.center) > CLEARING_RADIUS + BORDERLANDS_WIDTH) {
+                        logStatus("Cannot leave play area!", "error");
+                        return;
+                    }
+                    
+                    this.executeMove(targetPos);
+                }
+
+                executeMove(targetPos) {
+                    const piece = this.selectedPiece;
+                    
+                    if (piece.isTiger) {
+                        // Tiger move
+                        this.tiger.pos = targetPos.clone();
+                        
+                        // Pounce check
+                        const landedHunter = this.hunters.find(h => 
+                            !h.incapacitated && h.pos.distanceTo(targetPos) < 10
+                        );
+                        
+                        if (landedHunter) {
+                            this.executePounceChain();
+                        } else {
+                            const threatened = this.hunters.filter(h => 
+                                !h.incapacitated && h.pos.distanceTo(targetPos) <= HAND_SPAN
+                            ).length;
+                            if (threatened > 0) logStatus(`ROAR! ${threatened} Hunter(s) near!`);
+                            this.endTurn();
+                        }
+                    } else {
+                        // Hunter move
+                        piece.pos = targetPos.clone();
+                        piece.hasMoved = true;
+                        this.huntersMoved.add(piece);
+                        logStatus("Hunter moved (now darker).");
+                        
+                        // Rescue check
+                        const rescued = this.hunters.find(h => 
+                            h !== piece && h.incapacitated && h.pos.distanceTo(targetPos) < 10
+                        );
+                        
+                        if (rescued) {
+                            rescued.incapacitated = false;
+                            logStatus("Hunter rescued!", "success");
                         }
                         
-                        this.draw();
-                    });
+                        this.endTurn();
+                    }
+                    
+                    piece.isSelected = false;
+                    this.selectedPiece = null;
+                }
+
+                executePounceChain() {
+                    let currentPos = this.tiger.pos;
+                    let chainCount = 0;
+                    
+                    while (true) {
+                        const targets = this.hunters
+                            .filter(h => !h.incapacitated && h.pos.distanceTo(currentPos) <= HAND_SPAN)
+                            .sort((a, b) => a.pos.distanceTo(currentPos) - b.pos.distanceTo(currentPos));
+                        
+                        if (!targets.length) break;
+                        
+                        const target = targets[0];
+                        target.incapacitated = true;
+                        chainCount++;
+                        currentPos = target.pos;
+                        logStatus(`Pounce #${chainCount}!`);
+                        
+                        if (this.hunters.every(h => h.incapacitated)) {
+                            this.winner = 'TIGER';
+                            logStatus("🎉 TIGER WINS!", "success");
+                            return;
+                        }
+                    }
+                    
+                    this.endTurn();
+                }
+
+                endTurn() {
+                    // If all Hunters moved, switch to Tiger
+                    if (this.turn === 'HUNTERS' && this.huntersMoved.size === this.hunters.length) {
+                        this.turn = 'TIGER';
+                        this.huntersMoved.clear();
+                        this.hunters.forEach(h => h.hasMoved = false);
+                        logStatus("All Hunters moved. Tiger's turn - Hunters refreshed!");
+                    }
+                    // If Tiger just moved, Hunters' turn is already set
                     
                     this.draw();
-                    document.getElementById('turn-indicator').textContent = "TIGER'S TURN";
-                    document.getElementById('status').textContent = "Click a piece, then click in range.";
                 }
 
                 draw() {
+                    // Clear
                     this.ctx.fillStyle = '#ecf0f1';
                     this.ctx.fillRect(0, 0, 800, 800);
                     
+                    // Zones
+                    this.ctx.strokeStyle = '#f39c12';
+                    this.ctx.lineWidth = 3;
+                    this.ctx.beginPath();
+                    this.ctx.arc(this.center.x, this.center.y, CLEARING_RADIUS, 0, Math.PI * 2);
+                    this.ctx.stroke();
+                    
+                    this.ctx.strokeStyle = '#3498db';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.beginPath();
+                    this.ctx.arc(this.center.x, this.center.y, CLEARING_RADIUS + BORDERLANDS_WIDTH, 0, Math.PI * 2);
+                    this.ctx.stroke();
+
+                    // Victory triangle
+                    if (this.winningHunters && this.winner === 'HUNTERS') {
+                        const pulse = Math.sin(Date.now() / 200) * 0.3 + 0.5;
+                        this.ctx.fillStyle = `rgba(46, 204, 113, ${pulse})`;
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(this.winningHunters[0].pos.x, this.winningHunters[0].pos.y);
+                        this.winningHunters.forEach(h => this.ctx.lineTo(h.pos.x, h.pos.y));
+                        this.ctx.closePath();
+                        this.ctx.fill();
+                        
+                        this.ctx.strokeStyle = `rgba(39, 174, 96, ${pulse + 0.3})`;
+                        this.ctx.lineWidth = 4;
+                        this.ctx.stroke();
+                    }
+
                     // Range indicator
-                    const selected = this.tiger.isSelected ? this.tiger : (this.hunters[0].isSelected ? this.hunters[0] : null);
-                    if (selected) {
+                    if (this.selectedPiece) {
                         this.ctx.strokeStyle = 'rgba(241, 196, 15, 0.6)';
                         this.ctx.lineWidth = 4;
                         this.ctx.beginPath();
-                        this.ctx.arc(selected.pos.x, selected.pos.y, HAND_SPAN, 0, Math.PI * 2);
+                        this.ctx.arc(this.selectedPiece.pos.x, this.selectedPiece.pos.y, HAND_SPAN, 0, Math.PI * 2);
                         this.ctx.stroke();
+                        
+                        this.ctx.fillStyle = '#f39c12';
+                        this.ctx.font = 'bold 16px Arial';
+                        this.ctx.fillText(`Max: ${HAND_SPAN}px`, 10, 30);
                     }
                     
+                    // Pieces
                     this.tiger.draw(this.ctx);
-                    this.hunters[0].draw(this.ctx);
-                    document.getElementById('turn-indicator').textContent = `${this.turn}'S TURN`;
+                    this.hunters.forEach(h => h.draw(this.ctx));
+                    
+                    // Turn indicator
+                    const indicator = document.getElementById('turn-indicator');
+                    if (this.winner) {
+                        indicator.textContent = `${this.winner} WINS!`;
+                        indicator.style.color = '#e74c3c';
+                    } else {
+                        indicator.textContent = `${this.turn}'s Turn`;
+                        indicator.style.color = this.turn === 'TIGER' ? '#e74c3c' : '#27ae60';
+                    }
                 }
             }
 
-            document.getElementById('status').textContent = "Creating game instance...";
+            // Start the game
+            document.getElementById('status').textContent = "Initializing game...";
             const game = new Game();
-            document.getElementById('reset-btn').addEventListener('click', () => game.draw());
             
-            document.getElementById('status').textContent = "SUCCESS! Game is running.";
+            document.getElementById('reset-btn').addEventListener('click', () => {
+                game.reset();
+                logStatus("Game reset!");
+            });
         }
     </script>
 </body>
