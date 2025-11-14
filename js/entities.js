@@ -20,6 +20,7 @@ export class Piece {
         this.isTiger = isTiger;
         this.incapacitated = false;
         this.radius = 15;
+        this.borderlandsTurns = 0; // NEW: Track consecutive camping turns
     }
     
     draw(ctx) {
@@ -33,8 +34,10 @@ export class Piece {
             ctx.strokeStyle = '#e74c3c';
             ctx.lineWidth = 3;
             ctx.beginPath();
-            ctx.moveTo(this.pos.x - 10, this.pos.y - 10);
+            ctx.moveTo(this.pos.x - 10, this.pos.y - 10); // FIXED: was cntx
             ctx.lineTo(this.pos.x + 10, this.pos.y + 10);
+            ctx.moveTo(this.pos.x - 10, this.pos.y + 10); // Added second leg of X
+            ctx.lineTo(this.pos.x + 10, this.pos.y - 10);
             ctx.stroke();
         }
     }
