@@ -27,7 +27,7 @@ export class Game {
         this.huntersMoved = new Set();
         this.selectedPiece = null;
         this.roarActive = false;
-        this.winner = null;
+        self.winner = null;
         this.winningHunters = null;
         this.moveHistory = [];
         this.animationQueue = [];
@@ -109,17 +109,15 @@ export class Game {
         setTimeout(() => {
             this.tiger.updateAnimation(this.tiger.animationEnd);
             
-            const landedHunter = this.hunters.find(h => 
-                !h.incapacitated && !h.isRemoved && 
-                this.tiger.pos.distanceTo(h.pos) <= this.tiger.radius + h.radius
-            );
+            // Check if Tiger landed ON a hunter (collision)
+            const landedHunter = Systems.getLandedHunter(this.tiger.pos, this.hunters, this.tiger.radius);
             
             if (landedHunter) {
                 console.log("=== TIGER LANDED ON HUNTER ===");
-                console.log("Landed hunter at:", landedHunter.pos);
                 this.processPounceChain(landedHunter);
             } else {
-                this.roarActive = Systems.getPounceTargets(this.tiger.pos, this.hunters, this.center, this.tiger.radius).length > 0;
+                // Check for Roar (hunters within HAND_SPAN)
+                this.roarActive = Systems.getHuntersInPounceRange(this.tiger.pos, this.hunters, this.center, Systems.HAND_SPAN).length > 0;
                 if (this.roarActive) console.log("ROAR!");
                 
                 this.turn = 'HUNTERS';
@@ -131,10 +129,10 @@ export class Game {
     
     processPounceChain(initialHunter) {
         console.log("=== Starting Pounce Chain ===");
+        console.log("Initial hunter at:", initialHunter.pos);
         
         // Pounce the landed hunter
         initialHunter.incapacitated = true;
-        console.log("Pounced initial hunter:", initialHunter.pos);
         
         if (Systems.checkTigerVictory(this.hunters)) {
             this.winner = 'TIGER';
@@ -142,37 +140,31 @@ export class Game {
             return;
         }
         
-        // Check for chain pounces from current Tiger position
-        this.performNextPounce();
+        // Check for additional hunters within HAND_SPAN
+        this.performNextPounce(this.tiger.pos);
     }
     
-    performNextPounce() {
-        console.log("--- Checking for next pounce ---");
-        console.log("Tiger position:", this.tiger.pos);
+    performNextPounce(fromPos) {
+        console.log("--- Checking for next pounce from Tiger position:", fromPos);
         
-        const targets = Systems.getPounceTargets(this.tiger.pos, this.hunters, this.center, this.tiger.radius);
+        // Find hunters within HAND_SPAN (not collision distance!)
+        const targets = Systems.getHuntersInPounceRange(fromPos, this.hunters, this.center, Systems.HAND_SPAN);
         
-        console.log("Targets found:", targets.length);
-        targets.forEach((t, i) => console.log(`  ${i}: Hunter at (${t.pos.x}, ${t.pos.y})`));
+        console.log(`Found ${targets.length} hunters within ${Systems.HAND_SPAN}px`);
+        targets.forEach((t, i) => {
+            const dist = fromPos.distanceTo(t.pos);
+            console.log(`  ${i}: Hunter at (${t.pos.x}, ${t.pos.y}) - distance: ${dist.toFixed(2)}px`);
+        });
         
         if (!targets.length) {
-            console.log("No more targets. Ending Tiger turn.");
+            console.log("No more hunters in range. Ending turn.");
             this.turn = 'HUNTERS';
             this.huntersMoved.clear();
             this.processingAction = false;
             return;
         }
         
-        // Get the nearest target
         const target = targets[0];
-        
-        // Safety check: don't pounce if already incapacitated (shouldn't happen)
-        if (target.incapacitated) {
-            console.log("ERROR: Target is already incapacitated!", target);
-            this.performNextPounce(); // Skip and try next
-            return;
-        }
-        
         console.log("Pouncing hunter at:", target.pos);
         target.incapacitated = true;
         
@@ -189,7 +181,7 @@ export class Game {
             }
             
             // Continue chain from new position
-            this.performNextPounce();
+            this.performNextPounce(target.pos);
         }, this.tiger.animationDuration);
     }
     
