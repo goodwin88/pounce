@@ -17,7 +17,6 @@
         #reset-btn, #undo-btn { width: 100%; padding: 10px; margin: 5px 0; border: none; border-radius: 5px; cursor: pointer; }
         #reset-btn { background: #3498db; color: white; }
         #undo-btn { background: #e67e22; color: white; display: none; }
-        #undo-btn:hover { background: #d35400; }
     </style>
 </head>
 <body>
@@ -31,9 +30,9 @@
             <div id="rules">
                 <h3>How to Play</h3>
                 <p><strong>1. Click & HOLD</strong> a piece</p>
-                <p><strong>2. DRAG</strong> it (yellow circle = range)</p>
-                <p><strong>3. RELEASE</strong> to place it</p>
-                <p><strong>Undo:</strong> Click button to undo your *current* move</p>
+                <p><strong>2. DRAG</strong> (yellow = range, red = max)</p>
+                <p><strong>3. RELEASE</strong> to confirm placement</p>
+                <p><strong>Undo:</strong> Mistake? Click to undo</p>
             </div>
         </div>
     </div>
@@ -56,17 +55,27 @@
         class Piece {
             constructor(pos, color, isTiger = false) {
                 this.pos = pos;
-                this.originalPos = pos.clone(); // For undo
+                this.originalPos = pos.clone();
                 this.color = color;
                 this.isTiger = isTiger;
                 this.incapacitated = false;
                 this.hasMoved = false;
                 this.radius = 15;
                 this.isSelected = false;
+                this.isVictoryPiece = false; // NEW: Flash on win
             }
             
             draw(ctx) {
-                // Draw selection ring
+                // Victory flash
+                if (this.isVictoryPiece) {
+                    ctx.strokeStyle = '#2ecc71';
+                    ctx.lineWidth = 6;
+                    ctx.beginPath();
+                    ctx.arc(this.pos.x, this.pos.y, this.radius + 10, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+
+                // Selection ring
                 if (this.isSelected) {
                     ctx.strokeStyle = '#f1c40f';
                     ctx.lineWidth = 4;
@@ -75,7 +84,7 @@
                     ctx.stroke();
                 }
 
-                // Alpha for moved pieces
+                // Piece body with alpha
                 ctx.save();
                 if (this.incapacitated) {
                     ctx.fillStyle = '#7f8c8d';
@@ -105,7 +114,7 @@
             }
 
             contains(point) {
-                return this.pos.distanceTo(point) <= this.radius + 5; // Larger grab zone
+                return this.pos.distanceTo(point) <= this.radius + 5;
             }
         }
 
@@ -120,13 +129,9 @@
                 this.canvas = document.getElementById('gameCanvas');
                 this.ctx = this.canvas.getContext('2d');
                 this.center = new Vector2(400, 400);
-                this.dragState = { // NEW: Track dragging
-                    piece: null,
-                    offset: null,
-                    currentPos: null,
-                    isDragging: false
-                };
-                this.undoBuffer = []; // NEW: Store move for undo
+                this.dragState = { piece: null, offset: null, isDragging: false };
+                this.undoBuffer = [];
+                this.winningHunters = null; // NEW: Store victory triangle
                 this.reset();
                 this.setupEventListeners();
             }
@@ -147,16 +152,17 @@
                 this.turn = 'TIGER';
                 this.huntersMoved = new Set();
                 this.winner = null;
+                this.winningHunters = null;
                 this.undoBuffer = [];
-                this.dragState = { piece: null, offset: null, currentPos: null, isDragging: false };
+                this.dragState = { piece: null, offset: null, isDragging: false };
                 
                 document.getElementById('undo-btn').style.display = 'none';
-                logStatus("Game ready! Click & DRAG the Tiger to move.");
+                logStatus("Game ready! Drag the Tiger to start.");
                 this.draw();
             }
 
             setupEventListeners() {
-                // MOUSE DOWN - Start drag
+                // Drag start
                 this.canvas.addEventListener('mousedown', (e) => {
                     if (this.winner) return;
                     
@@ -166,15 +172,15 @@
                     
                     if (piece) {
                         if (this.turn === 'TIGER' && !piece.isTiger) {
-                            logStatus("It's Tiger's turn!", "error");
+                            logStatus("Tiger's turn!", "error");
                             return;
                         }
                         if (this.turn === 'HUNTERS' && piece.isTiger) {
-                            logStatus("It's Hunters' turn!", "error");
+                            logStatus("Hunters' turn!", "error");
                             return;
                         }
                         if (this.turn === 'HUNTERS' && this.huntersMoved.has(piece)) {
-                            logStatus("That Hunter already moved!", "error");
+                            logStatus("Already moved!", "error");
                             return;
                         }
                         
@@ -182,61 +188,69 @@
                     }
                 });
 
-                // MOUSE MOVE - Dragging
+                // Drag move with RANGE CLAMPING
                 this.canvas.addEventListener('mousemove', (e) => {
                     if (!this.dragState.isDragging) return;
                     
                     const rect = this.canvas.getBoundingClientRect();
                     const mousePos = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
                     
-                    this.dragState.currentPos = mousePos;
-                    this.dragState.piece.pos = new Vector2(
+                    // ====== RANGE CLAMPING ======
+                    const originalPos = this.dragState.piece.originalPos;
+                    const rawPos = new Vector2(
                         mousePos.x - this.dragState.offset.x,
                         mousePos.y - this.dragState.offset.y
                     );
                     
+                    // Calculate distance from origin
+                    const dist = originalPos.distanceTo(rawPos);
+                    
+                    // If beyond HAND_SPAN, clamp to max range
+                    if (dist > HAND_SPAN) {
+                        const angle = Math.atan2(rawPos.y - originalPos.y, rawPos.x - originalPos.x);
+                        const clampedPos = new Vector2(
+                            originalPos.x + Math.cos(angle) * HAND_SPAN,
+                            originalPos.y + Math.sin(angle) * HAND_SPAN
+                        );
+                        this.dragState.piece.pos = clampedPos;
+                    } else {
+                        this.dragState.piece.pos = rawPos;
+                    }
+                    
+                    this.dragState.currentPos = mousePos;
                     this.draw();
                 });
 
-                // MOUSE UP - End drag / place piece
+                // Drag end
                 this.canvas.addEventListener('mouseup', (e) => {
                     if (!this.dragState.isDragging) return;
                     
                     const piece = this.dragState.piece;
-                    const targetPos = piece.pos.clone(); // Where the piece was dragged to
+                    const targetPos = piece.pos.clone();
                     
                     this.endDrag();
                     
-                    // Validate placement
-                    const dist = piece.originalPos.distanceTo(targetPos);
-                    if (dist > HAND_SPAN) {
-                        logStatus(`Too far! Max distance: ${HAND_SPAN}px`, "error");
-                        this.cancelDrag(); // Snap back
-                        return;
-                    }
-                    
                     // Zone validation
                     if (piece.isTiger && targetPos.distanceTo(this.center) > CLEARING_RADIUS) {
-                        logStatus("Tiger cannot leave Clearing!", "error");
+                        logStatus("Tiger can't leave Clearing!", "error");
                         this.cancelDrag();
                         return;
                     }
                     
-                    const maxDist = this.center.distanceTo(targetPos);
+                    const maxDist = targetPos.distanceTo(this.center);
                     if (maxDist > CLEARING_RADIUS + BORDERLANDS_WIDTH) {
-                        logStatus("Cannot leave the play area!", "error");
+                        logStatus("Can't leave play area!", "error");
                         this.cancelDrag();
                         return;
                     }
                     
-                    // Valid move - save to undo buffer
+                    // Save to undo buffer
                     this.undoBuffer.push({
                         piece: piece,
                         from: piece.originalPos,
-                        to: targetPos.clone()
+                        to: targetPos
                     });
                     
-                    // Execute move
                     if (piece.isTiger) {
                         this.executeTigerMove(targetPos);
                     } else {
@@ -244,12 +258,10 @@
                     }
                 });
 
-                // Prevent accidental drags off-canvas
                 this.canvas.addEventListener('mouseleave', () => {
                     if (this.dragState.isDragging) this.cancelDrag();
                 });
 
-                // Undo button
                 document.getElementById('undo-btn').addEventListener('click', () => {
                     this.undoMove();
                 });
@@ -261,61 +273,43 @@
                 
                 this.dragState = {
                     piece: piece,
-                    offset: new Vector2(
-                        mousePos.x - piece.pos.x,
-                        mousePos.y - piece.pos.y
-                    ),
-                    currentPos: mousePos,
+                    offset: new Vector2(mousePos.x - piece.pos.x, mousePos.y - piece.pos.y),
                     isDragging: true
                 };
                 
                 this.canvas.style.cursor = 'grabbing';
-                logStatus(`Dragging ${piece.isTiger ? 'Tiger' : 'Hunter'}...`);
+                logStatus("Dragging... release to place.");
                 this.draw();
             }
 
             endDrag() {
-                if (this.dragState.piece) {
-                    this.dragState.piece.isSelected = false;
-                }
-                this.dragState = { piece: null, offset: null, currentPos: null, isDragging: false };
+                if (this.dragState.piece) this.dragState.piece.isSelected = false;
+                this.dragState = { piece: null, offset: null, isDragging: false };
                 this.canvas.style.cursor = 'grab';
             }
 
             cancelDrag() {
-                // Snap piece back to original position
                 if (this.dragState.piece) {
                     this.dragState.piece.pos = this.dragState.piece.originalPos.clone();
                 }
                 this.endDrag();
-                logStatus("Move cancelled.");
                 this.draw();
-            }
-
-            getPieceAt(pos) {
-                if (this.tiger.contains(pos)) return this.tiger;
-                for (let h of this.hunters) {
-                    if (!h.incapacitated && h.contains(pos)) return h;
-                }
-                return null;
             }
 
             executeTigerMove(targetPos) {
                 this.tiger.pos = targetPos.clone();
                 
-                // Check for landed hunter
                 const landedHunter = this.hunters.find(h => 
                     !h.incapacitated && h.pos.distanceTo(targetPos) < 10
                 );
 
                 if (landedHunter) {
-                    logStatus("Tiger pounced! Starting chain...");
                     this.executePounceChain();
                 } else {
                     const threatened = this.hunters.filter(h => 
                         !h.incapacitated && h.pos.distanceTo(targetPos) <= HAND_SPAN
                     ).length;
-                    if (threatened > 0) logStatus(`ROAR! ${threatened} Hunter(s) in range!`);
+                    if (threatened > 0) logStatus(`ROAR! ${threatened} Hunter(s) near!`);
                     this.endTigerTurn();
                 }
             }
@@ -335,11 +329,10 @@
                     target.incapacitated = true;
                     chain++;
                     currentPos = target.pos;
-                    logStatus(`Chain pounce #${chain}!`);
+                    logStatus(`Pounce ${chain}!`);
 
                     if (this.hunters.every(h => h.incapacitated)) {
                         this.winner = 'TIGER';
-                        logStatus("🎉 TIGER WINS!", "success");
                         this.endGame();
                         return;
                     }
@@ -349,20 +342,12 @@
             }
 
             endTigerTurn() {
-                // Clear selection and drag state
-                if (this.selectedPiece) this.selectedPiece.isSelected = false;
-                this.selectedPiece = null;
-                this.endDrag();
-                
-                // Reset Hunter moved flags
                 this.hunters.forEach(h => h.hasMoved = false);
-                
                 this.turn = 'HUNTERS';
                 this.huntersMoved.clear();
                 this.undoBuffer = [];
-                
                 document.getElementById('undo-btn').style.display = 'none';
-                logStatus("Hunters' turn - all Hunters refreshed (full color).");
+                logStatus("Hunters' turn - all refreshed!");
                 this.draw();
             }
 
@@ -370,7 +355,6 @@
                 hunter.pos = targetPos.clone();
                 hunter.hasMoved = true;
                 this.huntersMoved.add(hunter);
-                logStatus("Hunter moved (now darker).");
 
                 const rescued = this.hunters.find(h => 
                     h !== hunter && h.incapacitated && h.pos.distanceTo(targetPos) < 10
@@ -378,32 +362,21 @@
 
                 if (rescued) {
                     rescued.incapacitated = false;
-                    logStatus("Hunter rescued!", "success");
+                    logStatus("Rescued!", "success");
                 }
 
-                this.hideUndoButtonIfInvalid();
                 this.checkVictory();
-                this.draw();
-            }
-
-            hideUndoButtonIfInvalid() {
-                // Hide undo if no longer valid to undo
-                const lastMove = this.undoBuffer[this.undoBuffer.length - 1];
-                if (!lastMove || lastMove.piece.hasMoved !== this.turn === 'HUNTERS') {
-                    document.getElementById('undo-btn').style.display = 'none';
-                }
             }
 
             checkVictory() {
-                // Tiger victory
+                // Tiger win
                 if (this.hunters.every(h => h.incapacitated)) {
                     this.winner = 'TIGER';
-                    logStatus("🎉 TIGER WINS!", "success");
                     this.endGame();
                     return;
                 }
 
-                // Hunter victory (simplified)
+                // Hunter win (simplified)
                 const activeInClearing = this.hunters.filter(h => 
                     !h.incapacitated && h.pos.distanceTo(this.center) <= CLEARING_RADIUS
                 );
@@ -412,27 +385,28 @@
                     const nearTiger = activeInClearing.filter(h => h.pos.distanceTo(this.tiger.pos) <= 200);
                     if (nearTiger.length >= 3) {
                         this.winner = 'HUNTERS';
-                        logStatus("🎉 HUNTERS WIN! Triangle formed!", "success");
+                        this.winningHunters = nearTiger.slice(0, 3);
+                        this.winningHunters.forEach(h => h.isVictoryPiece = true);
                         this.endGame();
                         return;
                     }
                 }
 
-                // Check if all hunters moved
                 if (this.huntersMoved.size === this.hunters.length) {
                     this.endTigerTurn();
                 } else {
-                    logStatus(`Select next Hunter (${5 - this.huntersMoved.size} remaining).`);
+                    logStatus(`${5 - this.huntersMoved.size} Hunters left.`);
                 }
             }
 
             endGame() {
                 this.canvas.style.cursor = 'default';
                 document.getElementById('undo-btn').style.display = 'none';
+                this.draw();
             }
 
             draw() {
-                // Clear canvas
+                // Clear
                 this.ctx.fillStyle = '#ecf0f1';
                 this.ctx.fillRect(0, 0, 800, 800);
                 
@@ -449,17 +423,51 @@
                 this.ctx.arc(this.center.x, this.center.y, CLEARING_RADIUS + BORDERLANDS_WIDTH, 0, Math.PI * 2);
                 this.ctx.stroke();
 
-                // Draw range indicator while dragging
+                // ====== VICTORY TRIANGLE ======
+                if (this.winningHunters && this.winner === 'HUNTERS') {
+                    // Pulsing green net
+                    const pulse = Math.sin(Date.now() / 200) * 0.3 + 0.5;
+                    this.ctx.fillStyle = `rgba(46, 204, 113, ${pulse})`;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(this.winningHunters[0].pos.x, this.winningHunters[0].pos.y);
+                    this.winningHunters.forEach(h => this.ctx.lineTo(h.pos.x, h.pos.y));
+                    this.ctx.closePath();
+                    this.ctx.fill();
+                    
+                    // Draw net pattern
+                    this.ctx.strokeStyle = `rgba(39, 174, 96, ${pulse + 0.3})`;
+                    this.ctx.lineWidth = 3;
+                    this.ctx.stroke();
+                    
+                    // Label
+                    this.ctx.fillStyle = '#27ae60';
+                    this.ctx.font = 'bold 24px Arial';
+                    this.ctx.fillText('NET CLOSED!', this.tiger.pos.x - 60, this.tiger.pos.y - 20);
+                }
+
+                // ====== DRAGGING UI ======
                 if (this.dragState.isDragging) {
                     const piece = this.dragState.piece;
-                    this.ctx.strokeStyle = 'rgba(241, 196, 15, 0.5)';
-                    this.ctx.lineWidth = 4;
+                    const origin = piece.originalPos;
+                    const dist = origin.distanceTo(piece.pos);
+                    
+                    // Range circle
+                    this.ctx.strokeStyle = dist > HAND_SPAN ? 'rgba(231, 76, 60, 0.6)' : 'rgba(241, 196, 15, 0.5)';
+                    this.ctx.lineWidth = dist > HAND_SPAN ? 5 : 4;
                     this.ctx.beginPath();
-                    this.ctx.arc(piece.originalPos.x, piece.originalPos.y, HAND_SPAN, 0, Math.PI * 2);
+                    this.ctx.arc(origin.x, origin.y, HAND_SPAN, 0, Math.PI * 2);
                     this.ctx.stroke();
-
-                    // Distance label
-                    const dist = piece.originalPos.distanceTo(piece.pos);
+                    
+                    // Range limit indicator (red when at max)
+                    if (dist >= HAND_SPAN) {
+                        this.ctx.strokeStyle = '#e74c3c';
+                        this.ctx.lineWidth = 3;
+                        this.ctx.beginPath();
+                        this.ctx.arc(piece.pos.x, piece.pos.y, 20, 0, Math.PI * 2);
+                        this.ctx.stroke();
+                    }
+                    
+                    // Distance counter
                     this.ctx.fillStyle = dist > HAND_SPAN ? '#e74c3c' : '#27ae60';
                     this.ctx.font = 'bold 18px Arial';
                     this.ctx.fillText(`${Math.round(dist)}/${HAND_SPAN}px`, 10, 30);
@@ -469,7 +477,7 @@
                 this.tiger.draw(this.ctx);
                 this.hunters.forEach(h => h.draw(this.ctx));
                 
-                // Update turn indicator
+                // Turn indicator
                 const indicator = document.getElementById('turn-indicator');
                 if (this.winner) {
                     indicator.textContent = `${this.winner} WINS!`;
@@ -481,7 +489,7 @@
             }
         }
 
-        // ========== START ==========
+        // ========== INITIALIZE ==========
         let game;
         window.addEventListener('load', () => {
             game = new Game();
@@ -489,10 +497,6 @@
 
         document.getElementById('reset-btn').addEventListener('click', () => {
             if (game) game.reset();
-        });
-
-        document.getElementById('undo-btn').addEventListener('click', () => {
-            if (game) game.undoMove();
         });
     </script>
 </body>
