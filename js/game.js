@@ -86,40 +86,68 @@ export class Game {
     }
     
     executeTigerTurn(targetPos) {
-        this.tiger.pos = targetPos.clone();
-        
-        // Find hunters landed on (edge-to-edge collision)
-        const landedHunter = this.hunters.find(h => 
-            !h.incapacitated && !h.isRemoved && 
-            this.tiger.pos.distanceTo(h.pos) <= this.tiger.radius + h.radius
+    // Clamp Tiger's center to stay within Clearing minus its radius
+    const maxDistanceFromCenter = Systems.CLEARING_RADIUS - this.tiger.radius;
+    const distanceFromCenter = targetPos.distanceTo(this.center);
+    
+    if (distanceFromCenter > maxDistanceFromCenter) {
+        const angle = Math.atan2(targetPos.y - this.center.y, targetPos.x - this.center.x);
+        this.tiger.pos = new Vector2(
+            this.center.x + Math.cos(angle) * maxDistanceFromCenter,
+            this.center.y + Math.sin(angle) * maxDistanceFromCenter
         );
+    } else {
+        this.tiger.pos = targetPos.clone();
+    }
+    
+    // Find hunters landed on (edge-to-edge collision)
+    const landedHunter = this.hunters.find(h => 
+        !h.incapacitated && !h.isRemoved && 
+        this.tiger.pos.distanceTo(h.pos) <= this.tiger.radius + h.radius
+    );
+    
+    if (landedHunter) {
+        // Chain pounce sequence - Tiger moves to each hunter's position
+        let currentPos = this.tiger.pos;
+        let chainCount = 0;
         
-        if (landedHunter) {
-            // Chain pounce sequence
-            let currentPos = this.tiger.pos;
-            while (true) {
-                const targets = Systems.getPounceTargets(currentPos, this.hunters, this.center);
-                if (!targets.length) break;
-                
-                const target = targets[0];
-                target.incapacitated = true;
-                currentPos = target.pos;
-                
-                if (Systems.checkTigerVictory(this.hunters)) {
-                    this.winner = 'TIGER';
-                    return;
-                }
+        while (true) {
+            // PASS TIGER RADIUS HERE
+            const targets = Systems.getPounceTargets(currentPos, this.hunters, this.center, this.tiger.radius);
+            
+            if (!targets.length) {
+                console.log(`Chain pounce ended. Total pounced: ${chainCount}`);
+                break;
             }
-        } else {
-            this.roarActive = Systems.getPounceTargets(this.tiger.pos, this.hunters, this.center).length > 0;
-            if (this.roarActive) {
-                console.log("ROAR!");
+            
+            const target = targets[0];
+            target.incapacitated = true;
+            chainCount++;
+            
+            console.log(`Pounce #${chainCount}: Hunter at (${target.pos.x}, ${target.pos.y})`);
+            
+            // Tiger moves to the pounced hunter's position
+            currentPos = target.pos;
+            this.tiger.pos = target.pos.clone(); // UPDATE TIGER POSITION
+            
+            // Check for Tiger victory
+            if (Systems.checkTigerVictory(this.hunters)) {
+                this.winner = 'TIGER';
+                console.log("TIGER VICTORY!");
+                return;
             }
         }
-        
-        this.turn = 'HUNTERS';
-        this.huntersMoved.clear();
+    } else {
+        // Check for Roar (threatens hunters next turn)
+        this.roarActive = Systems.getPounceTargets(this.tiger.pos, this.hunters, this.center, this.tiger.radius).length > 0;
+        if (this.roarActive) {
+            console.log("ROAR! - Hunters threatened");
+        }
     }
+    
+    this.turn = 'HUNTERS';
+    this.huntersMoved.clear();
+}
     
     executeHunterTurn(hunter, targetPos) {
         hunter.pos = targetPos.clone();
