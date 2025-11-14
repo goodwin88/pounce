@@ -10,25 +10,24 @@
         canvas { border: 2px solid #34495e; cursor: pointer; }
         #ui { width: 280px; }
         #status { background: #ecf0f1; padding: 10px; border-radius: 5px; margin: 10px 0; min-height: 60px; font-size: 14px; }
-        .error { color: #e74c3c; }
-        .success { color: #27ae60; }
-        #turn-indicator { color: #e74c3c; margin: 0 0 10px 0; }
-        #reset-btn { width: 100%; padding: 10px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        .error { color: #e74c3c; font-weight: bold; }
+        .success { color: #27ae60; font-weight: bold; }
+        #turn-indicator { color: #e74c3c; margin: 0 0 10px 0; font-size: 24px; }
+        #reset-btn { width: 100%; padding: 10px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
     </style>
 </head>
 <body>
     <div id="game-container">
         <canvas id="gameCanvas" width="800" height="800"></canvas>
         <div id="ui">
-            <h1 id="turn-indicator">Initializing...</h1>
-            <div id="status">Loading game...</div>
+            <h1 id="turn-indicator">Loading...</h1>
+            <div id="status">Initializing game...</div>
             <button id="reset-btn">New Game</button>
             <div id="rules">
                 <h3>How to Play</h3>
-                <p><strong>1. Click a piece</strong> to select it (will highlight)</p>
-                <p><strong>2. Click an empty spot</strong> to move there</p>
-                <p><strong>Tiger:</strong> Red, starts in center</p>
-                <p><strong>Hunters:</strong> Green, start in outer ring</p>
+                <p><strong>1. Click a piece</strong> to select it (yellow ring)</p>
+                <p><strong>2. Click in the yellow circle</strong> to move there</p>
+                <p><strong>Moved Hunters</strong> appear darker until next turn</p>
             </div>
         </div>
     </div>
@@ -38,7 +37,7 @@
         function logStatus(message, type = "info") {
             const statusDiv = document.getElementById('status');
             statusDiv.innerHTML = `<span class="${type}">${message}</span>`;
-            console.log(message); // Also log to console
+            console.log(message);
         }
 
         // ========== CORE CLASSES ==========
@@ -54,27 +53,37 @@
                 this.color = color;
                 this.isTiger = isTiger;
                 this.incapacitated = false;
+                this.hasMoved = false; // NEW: Track if moved this turn
                 this.radius = 15;
-                this.isSelected = false; // NEW: visual selection state
+                this.isSelected = false;
             }
             
             draw(ctx) {
-                // Draw selection highlight
+                // Draw selection ring
                 if (this.isSelected) {
                     ctx.strokeStyle = '#f1c40f';
                     ctx.lineWidth = 4;
                     ctx.beginPath();
-                    ctx.arc(this.pos.x, this.pos.y, this.radius + 5, 0, Math.PI * 2);
+                    ctx.arc(this.pos.x, this.pos.y, this.radius + 8, 0, Math.PI * 2);
                     ctx.stroke();
                 }
 
-                // Draw piece
-                const color = this.incapacitated ? '#7f8c8d' : this.color;
-                ctx.fillStyle = color;
+                // Set color with alpha for moved pieces
+                ctx.save();
+                if (this.incapacitated) {
+                    ctx.fillStyle = '#7f8c8d';
+                } else if (this.hasMoved) {
+                    ctx.fillStyle = this.color;
+                    ctx.globalAlpha = 0.4; // Darken moved pieces
+                } else {
+                    ctx.fillStyle = this.color;
+                }
+                
                 ctx.beginPath();
                 ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
                 ctx.fill();
-                
+                ctx.restore(); // Reset alpha
+
                 // Draw X if incapacitated
                 if (this.incapacitated) {
                     ctx.strokeStyle = '#c0392b';
@@ -88,9 +97,8 @@
                 }
             }
 
-            // NEW: Check if a point is on this piece
             contains(point) {
-                return this.pos.distanceTo(point) <= this.radius;
+                return this.pos.distanceTo(point) <= this.radius + 2; // Slightly larger hitbox
             }
         }
 
@@ -102,27 +110,20 @@
         // ========== GAME LOGIC ==========
         class Game {
             constructor() {
-                logStatus("Game initializing...");
                 this.canvas = document.getElementById('gameCanvas');
                 this.ctx = this.canvas.getContext('2d');
                 this.center = new Vector2(400, 400);
                 this.selectedPiece = null;
                 this.reset();
-                this.setupEventListeners(); // NEW: Explicit setup
-                logStatus("Game ready! Tiger's turn - click the red piece.");
+                this.setupEventListeners();
             }
 
             reset() {
-                logStatus("Setting up board...");
-                
-                // Tiger in center
                 this.tiger = new Piece(this.center.clone(), '#e74c3c', true);
-                
-                // Hunters in visible positions in Borderlands
                 this.hunters = [];
                 for (let i = 0; i < 5; i++) {
                     const angle = (i * 72) * Math.PI / 180;
-                    const dist = CLEARING_RADIUS + 75; // Far enough to be clearly visible
+                    const dist = CLEARING_RADIUS + 75;
                     const pos = new Vector2(
                         this.center.x + Math.cos(angle) * dist,
                         this.center.y + Math.sin(angle) * dist
@@ -133,45 +134,28 @@
                 this.turn = 'TIGER';
                 this.huntersMoved = new Set();
                 this.winner = null;
+                logStatus("Game ready! Tiger's turn - click the red piece.");
                 this.draw();
-                logStatus(`Tiger's turn. Click the red piece to select it.`);
             }
 
             setupEventListeners() {
-                // NEW: More robust event handling
                 this.canvas.addEventListener('click', (e) => {
                     if (this.winner) return;
                     
                     const rect = this.canvas.getBoundingClientRect();
-                    const clickPos = new Vector2(
-                        e.clientX - rect.left,
-                        e.clientY - rect.top
-                    );
-
-                    logStatus(`Clicked at (${Math.round(clickPos.x)}, ${Math.round(clickPos.y)})`);
+                    const clickPos = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
 
                     if (!this.selectedPiece) {
-                        // Try to select a piece
                         const piece = this.getPieceAt(clickPos);
-                        if (piece) {
-                            this.selectPiece(piece);
-                        } else {
-                            logStatus("No piece there. Click a piece first.", "error");
-                        }
+                        if (piece) this.selectPiece(piece);
                     } else {
-                        // Move selected piece to clicked location
                         this.tryMoveSelected(clickPos);
                     }
                 });
-
-                logStatus("Click listeners attached successfully.");
             }
 
             getPieceAt(pos) {
-                // Check tiger first
                 if (this.tiger.contains(pos)) return this.tiger;
-                
-                // Then check hunters
                 for (let h of this.hunters) {
                     if (!h.incapacitated && h.contains(pos)) return h;
                 }
@@ -179,30 +163,27 @@
             }
 
             selectPiece(piece) {
-                // Validate selection
                 if (this.turn === 'TIGER' && !piece.isTiger) {
-                    logStatus("It's the Tiger's turn. Select the red piece.", "error");
+                    logStatus("It's Tiger's turn. Select the red piece.", "error");
                     return;
                 }
                 if (this.turn === 'HUNTERS' && piece.isTiger) {
-                    logStatus("It's the Hunters' turn. Select a green piece.", "error");
+                    logStatus("It's Hunters' turn. Select a green piece.", "error");
                     return;
                 }
                 if (this.turn === 'HUNTERS' && this.huntersMoved.has(piece)) {
-                    logStatus("That Hunter has already moved this turn.", "error");
+                    logStatus("That Hunter already moved. Pick another.", "error");
                     return;
                 }
 
-                // Deselect previous
                 if (this.selectedPiece) this.selectedPiece.isSelected = false;
-                
-                // Select new
                 this.selectedPiece = piece;
                 piece.isSelected = true;
                 this.draw();
-                
+
                 const name = piece.isTiger ? 'Tiger' : 'Hunter';
-                logStatus(`${name} selected. Now click where to move.`, "success");
+                const movesLeft = this.turn === 'HUNTERS' ? `(${5 - this.huntersMoved.size} left)` : '';
+                logStatus(`${name} selected ${movesLeft}. Click in the YELLOW CIRCLE to move.`, "success");
             }
 
             tryMoveSelected(targetPos) {
@@ -211,13 +192,23 @@
                 const dist = this.selectedPiece.pos.distanceTo(targetPos);
                 const pieceName = this.selectedPiece.isTiger ? 'Tiger' : 'Hunter';
 
-                // Validate move distance
                 if (dist > HAND_SPAN) {
-                    logStatus(`${pieceName} can't move that far. Max distance: ${HAND_SPAN}px`, "error");
+                    logStatus(`${pieceName} can't move that far. Max: ${HAND_SPAN}px`, "error");
                     return;
                 }
 
-                // Execute move
+                // Tiger cannot leave Clearing
+                if (this.selectedPiece.isTiger && targetPos.distanceTo(this.center) > CLEARING_RADIUS) {
+                    logStatus("Tiger cannot leave the Clearing!", "error");
+                    return;
+                }
+
+                // Hunters cannot leave play area
+                if (!this.selectedPiece.isTiger && targetPos.distanceTo(this.center) > CLEARING_RADIUS + BORDERLANDS_WIDTH) {
+                    logStatus("Cannot move beyond the Borderlands!", "error");
+                    return;
+                }
+
                 if (this.selectedPiece.isTiger) {
                     this.executeTigerMove(targetPos);
                 } else {
@@ -226,30 +217,22 @@
             }
 
             executeTigerMove(targetPos) {
-                // Tiger cannot leave Clearing
-                if (targetPos.distanceTo(this.center) > CLEARING_RADIUS) {
-                    logStatus("Tiger cannot leave the Clearing!", "error");
-                    return;
-                }
-
                 this.tiger.pos = targetPos.clone();
-                logStatus(`Tiger moved to (${Math.round(targetPos.x)}, ${Math.round(targetPos.y)})`);
+                logStatus(`Tiger moved.`);
 
-                // Check if landed on a hunter
                 const landedHunter = this.hunters.find(h => 
                     !h.incapacitated && h.pos.distanceTo(targetPos) < 10
                 );
 
                 if (landedHunter) {
-                    logStatus(`Tiger pounced! ${landedHunter === this.selectedPiece ? '' : landedHunter.pos}`);
+                    logStatus("Tiger landed on a Hunter! Starting pounce chain...");
                     this.executePounceChain();
                 } else {
-                    // Check for Roar
                     const targetsInRange = this.hunters.filter(h => 
                         !h.incapacitated && h.pos.distanceTo(targetPos) <= HAND_SPAN
                     );
                     if (targetsInRange.length > 0) {
-                        logStatus(`ROAR! ${targetsInRange.length} Hunter(s) in range!`);
+                        logStatus(`ROAR! ${targetsInRange.length} Hunter(s) threatened!`);
                     }
                     this.endTigerTurn();
                 }
@@ -257,7 +240,7 @@
 
             executePounceChain() {
                 let currentPos = this.tiger.pos;
-                let pounceCount = 0;
+                let chainCount = 0;
 
                 while (true) {
                     const targets = this.hunters
@@ -268,13 +251,13 @@
 
                     const target = targets[0];
                     target.incapacitated = true;
-                    pounceCount++;
+                    chainCount++;
                     currentPos = target.pos;
-                    logStatus(`Pounced Hunter #${pounceCount}!`);
+                    logStatus(`Chain pounce #${chainCount}!`);
 
                     if (this.hunters.every(h => h.incapacitated)) {
                         this.winner = 'TIGER';
-                        logStatus("🎉 TIGER WINS! All Hunters incapacitated!");
+                        logStatus("🎉 TIGER WINS!", "success");
                         this.draw();
                         return;
                     }
@@ -284,20 +267,25 @@
             }
 
             endTigerTurn() {
-                this.selectedPiece.isSelected = false;
+                if (this.selectedPiece) this.selectedPiece.isSelected = false;
                 this.selectedPiece = null;
+                
+                // Reset all hunters' moved status
+                this.hunters.forEach(h => h.hasMoved = false);
+                
                 this.turn = 'HUNTERS';
                 this.huntersMoved.clear();
-                logStatus("Hunters' turn. Select a green piece.");
+                logStatus("Hunters' turn. All Hunters refreshed (no longer dark).");
                 this.draw();
             }
 
             executeHunterMove(hunter, targetPos) {
                 hunter.pos = targetPos.clone();
+                hunter.hasMoved = true; // NEW: Mark as moved
                 this.huntersMoved.add(hunter);
-                logStatus(`Hunter moved to (${Math.round(targetPos.x)}, ${Math.round(targetPos.y)})`);
+                logStatus(`Hunter moved (now darker).`);
 
-                // Check for rescue
+                // Rescue check
                 const rescued = this.hunters.find(h => 
                     h !== hunter && h.incapacitated && h.pos.distanceTo(targetPos) < 10
                 );
@@ -307,21 +295,23 @@
                     logStatus("Hunter rescued!", "success");
                 }
 
-                // End hunter's individual move
                 hunter.isSelected = false;
                 this.selectedPiece = null;
 
-                // Check if all hunters moved
                 if (this.huntersMoved.size === this.hunters.length) {
                     this.turn = 'TIGER';
                     this.huntersMoved.clear();
-                    logStatus("All Hunters moved. Tiger's turn.");
+                    logStatus("All Hunters moved. Tiger's turn - Hunters refreshed!");
                 } else {
                     logStatus(`Select next Hunter (${5 - this.huntersMoved.size} remaining).`);
                 }
 
-                // Check for Hunter victory
-                this.checkHunterVictory();
+                // Victory check
+                if (this.checkHunterVictory()) {
+                    this.winner = 'HUNTERS';
+                    logStatus("🎉 HUNTERS WIN! Triangle formed!", "success");
+                }
+
                 this.draw();
             }
 
@@ -330,17 +320,11 @@
                     !h.incapacitated && isInClearing(h.pos, this.center)
                 );
 
-                if (activeInClearing.length < 3) return;
+                if (activeInClearing.length < 3) return false;
 
-                // Simplified: check if 3 hunters are roughly around tiger
-                const closeHunters = activeInClearing.filter(h => 
-                    h.pos.distanceTo(this.tiger.pos) <= HAND_SPAN
-                );
-
-                if (closeHunters.length >= 3) {
-                    this.winner = 'HUNTERS';
-                    logStatus("🎉 HUNTERS WIN! Triangle formed!", "success");
-                }
+                // Simple proximity check (within 200px of Tiger)
+                const nearTiger = activeInClearing.filter(h => h.pos.distanceTo(this.tiger.pos) <= 200);
+                return nearTiger.length >= 3;
             }
 
             draw() {
@@ -360,30 +344,46 @@
                 this.ctx.beginPath();
                 this.ctx.arc(this.center.x, this.center.y, CLEARING_RADIUS + BORDERLANDS_WIDTH, 0, Math.PI * 2);
                 this.ctx.stroke();
+
+                // Draw range indicator for selected piece
+                if (this.selectedPiece && !this.selectedPiece.hasMoved) {
+                    this.ctx.strokeStyle = 'rgba(241, 196, 15, 0.4)';
+                    this.ctx.lineWidth = 3;
+                    this.ctx.beginPath();
+                    this.ctx.arc(this.selectedPiece.pos.x, this.selectedPiece.pos.y, HAND_SPAN, 0, Math.PI * 2);
+                    this.ctx.stroke();
+                    
+                    // Label it
+                    this.ctx.fillStyle = 'rgba(241, 196, 15, 0.8)';
+                    this.ctx.font = '14px Arial';
+                    this.ctx.fillText('Click here to move', this.selectedPiece.pos.x - 60, this.selectedPiece.pos.y - HAND_SPAN - 10);
+                }
                 
                 // Draw pieces
                 this.tiger.draw(this.ctx);
                 this.hunters.forEach(h => h.draw(this.ctx));
+                
+                // Update turn indicator
+                const indicator = document.getElementById('turn-indicator');
+                if (this.winner) {
+                    indicator.textContent = `${this.winner} WINS!`;
+                    indicator.style.color = '#e74c3c';
+                } else {
+                    indicator.textContent = `${this.turn}'s Turn`;
+                    indicator.style.color = this.turn === 'TIGER' ? '#e74c3c' : '#27ae60';
+                }
             }
         }
 
-        // ========== START GAME ==========
+        // ========== START ==========
         let game;
 
         window.addEventListener('load', () => {
-            try {
-                logStatus("Creating game instance...");
-                game = new Game();
-                logStatus("Game ready! Click the RED TIGER to select it.");
-            } catch (error) {
-                logStatus(`FATAL ERROR: ${error.message}`, "error");
-                console.error(error);
-            }
+            game = new Game();
         });
 
         document.getElementById('reset-btn').addEventListener('click', () => {
             if (game) game.reset();
-            logStatus("Game reset!");
         });
     </script>
 </body>
