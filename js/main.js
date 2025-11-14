@@ -21,7 +21,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let dragPreview = null;
     let lastTime = performance.now();
 
-    // SELECT PIECE (first click)
     canvas.addEventListener('mousedown', (e) => {
         if (game.winner || game.isAnimating()) return;
         
@@ -34,12 +33,11 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedPiece = piece;
             canvas.style.cursor = 'grabbing';
             const movesLeft = game.turn === 'HUNTERS' ? ` (${5 - game.huntersMoved.size} moves left)` : '';
-            statusDiv.textContent = `${piece.isTiger ? 'TIGER' : 'HUNTER'} selected${movesLeft}. Click within yellow ring to move.`;
+            statusDiv.textContent = `${piece.isTiger ? 'TIGER' : 'HUNTER'} selected${movesLeft}. Click within yellow ring.`;
             console.log('Selected:', piece.isTiger ? 'Tiger' : 'Hunter');
         }
     });
 
-    // DRAG PREVIEW (visual feedback)
     canvas.addEventListener('mousemove', (e) => {
         if (!selectedPiece) {
             const rect = canvas.getBoundingClientRect();
@@ -54,14 +52,12 @@ document.addEventListener('DOMContentLoaded', () => {
         dragPreview = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
     });
 
-    // MOVE PIECE (second click)
     canvas.addEventListener('mouseup', (e) => {
         if (!selectedPiece || game.isAnimating()) return;
         
         const rect = canvas.getBoundingClientRect();
         const targetPos = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
         
-        console.log('Attempting move to:', targetPos);
         game.movePiece(selectedPiece, targetPos);
         
         selectedPiece = null;
@@ -104,36 +100,32 @@ document.addEventListener('DOMContentLoaded', () => {
         const deltaTime = currentTime - lastTime;
         lastTime = currentTime;
         
-        // Update game animations
         const isAnimating = game.update(currentTime);
         if (isAnimating) {
-            updateUI(); // Update "Animating..." text
+            updateUI();
         }
 
         renderer.clear();
         renderer.drawZones();
         
-        // Draw Roar effect if active
-        if (game.roarActive && game.turn === 'TIGER' && !game.isAnimating()) {
+        if (game.roarActive && game.turn === 'TIGER') {
             renderer.drawRoarEffect(game.tiger.pos, game.hunters, game.center);
         }
         
-        // Draw range indicator for selected piece
         if (selectedPiece && !game.isAnimating()) {
             renderer.drawRangeIndicator(selectedPiece.pos, Systems.HAND_SPAN);
         }
         
-        // Draw all pieces with game state
         renderer.draw(game.getAllPieces(), {
             winner: game.winner,
             winningHunters: game.winningHunters,
             roarActive: game.roarActive,
             selectedPiece: selectedPiece,
             hunters: game.hunters,
-            tiger: game.tiger
+            tiger: game.tiger,
+            turn: game.turn
         });
         
-        // Draw drag preview line
         if (selectedPiece && dragPreview && !game.isAnimating()) {
             renderer.ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
             renderer.ctx.lineWidth = 2;
