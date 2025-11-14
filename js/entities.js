@@ -48,7 +48,7 @@ export class Piece {
         this.isRemoved = false;
         this.radius = isTiger ? 30 : 15;
         this.borderlandsTurns = 0;
-        this.hasMoved = false;
+        this.hasMoved = false; // Tracks if moved/rescued this turn
         this.isSelected = false;
         this.isVictoryPiece = false;
         this.moveOrder = null;
