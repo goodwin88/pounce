@@ -63,6 +63,11 @@ function gameLoop() {
     renderer.clear();
     renderer.drawZones();
     
+    // Draw Roar effect if active
+    if (game.roarActive && game.turn === 'TIGER') {
+        renderer.drawRoarEffect(game.tiger.pos, game.hunters, game.center);
+    }
+    
     // Draw range indicator if piece selected
     if (selectedPiece) {
         renderer.drawRangeIndicator(selectedPiece.pos, Systems.HAND_SPAN);
