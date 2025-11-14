@@ -17,7 +17,7 @@ export function isInBorderlands(pos, center) {
     return dist > CLEARING_RADIUS && dist <= CLEARING_RADIUS + BORDERLANDS_WIDTH;
 }
 
-// NEW: Find hunters landed on (collision)
+// NEW: Check collision for landing
 export function getLandedHunter(tigerPos, hunters, tigerRadius) {
     return hunters.find(h => 
         !h.incapacitated && !h.isRemoved && 
@@ -25,14 +25,13 @@ export function getLandedHunter(tigerPos, hunters, tigerRadius) {
     );
 }
 
-// NEW: Find hunters in pounce range (distance-based)
+// NEW: Get hunters within HAND_SPAN (pounce range)
 export function getHuntersInPounceRange(fromPos, hunters, center, range) {
     return hunters
         .filter(h => {
             if (h.incapacitated || h.isRemoved) return false;
             if (!isInClearing(h.pos, center)) return false;
             
-            // Distance-based: within HAND_SPAN
             const dist = distance(fromPos, h.pos);
             return dist <= range;
         })
