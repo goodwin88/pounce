@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiger & Hunters - Forced Load</title>
+    <style>
+        body { margin: 0; padding: 20px; background: #2c3e50; }
+        #game-container { display: flex; gap: 20px; background: white; padding: 20px; }
+        canvas { border: 2px solid #34495e; cursor: pointer; }
+        #ui { width: 280px; font-family: sans-serif; }
+        #status { background: #ecf0f1; padding: 10px; margin: 10px 0; min-height: 60px; }
+        #error-dump { background: #e74c3c; color: white; padding: 10px; margin: 10px 0; white-space: pre-wrap; display: none; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="gameCanvas" width="800" height="800"></canvas>
+        <div id="ui">
+            <h1 id="turn-indicator">Loading... <span id="countdown"></span></h1>
+            <div id="status">Forcing script execution... <span id="progress"></span></div>
+            <div id="error-dump"></div>
+            <button id="reset-btn">New Game</button>
+        </div>
+    </div>
+
+    <script>
+        // ========== IMMEDIATE ERROR HANDLING ==========
+        window.onerror = function(msg, url, line) {
+            const dump = document.getElementById('error-dump');
+            dump.style.display = 'block';
+            dump.textContent = `FATAL ERROR:\n${msg}\nLine ${line}`;
+            document.getElementById('status').textContent = "JavaScript crashed!";
+            document.getElementById('turn-indicator').textContent = "ERROR";
+            return false;
+        };
+
+        // ========== COUNTDOWN VISUAL ==========
+        let countdown = 5;
+        const countdownEl = document.getElementById('countdown');
+        const progressEl = document.getElementById('progress');
+        
+        function tick() {
+            countdownEl.textContent = `(${countdown})`;
+            progressEl.textContent = '.'.repeat(6 - countdown);
+            countdown--;
+            
+            if (countdown >= 0) {
+                setTimeout(tick, 200);
+            } else {
+                // FORCE execution here
+                try {
+                    main();
+                } catch (e) {
+                    window.onerror(e.message, '', e.stack);
+                }
+            }
+        }
+        tick();
+
+        // ========== CORE GAME (Simplified) ==========
+        function main() {
+            document.getElementById('status').textContent = "Executing main()...";
+            
+            class Vector2 {
+                constructor(x, y) { this.x = x; this.y = y; }
+                distanceTo(other) { return Math.sqrt((this.x - other.x) ** 2 + (this.y - other.y) ** 2); }
+            }
+
+            class Piece {
+                constructor(pos, color) {
+                    this.pos = pos;
+                    this.color = color;
+                    this.incapacitated = false;
+                    this.radius = 15;
+                }
+                
+                draw(ctx) {
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                contains(point) {
+                    return this.pos.distanceTo(point) <= this.radius + 5;
+                }
+            }
+
+            const HAND_SPAN = 150;
+            const CENTER = new Vector2(400, 400);
+
+            class Game {
+                constructor() {
+                    document.getElementById('status').textContent = "Creating Game object...";
+                    
+                    this.canvas = document.getElementById('gameCanvas');
+                    this.ctx = this.canvas.getContext('2d');
+                    this.tiger = new Piece(CENTER, '#e74c3c');
+                    this.hunters = [new Piece(new Vector2(500, 400), '#27ae60')];
+                    this.turn = 'TIGER';
+                    
+                    this.canvas.addEventListener('click', (e) => {
+                        const pos = new Vector2(e.clientX - this.canvas.offsetLeft, e.clientY - this.canvas.offsetTop);
+                        
+                        if (this.tiger.contains(pos)) {
+                            this.tiger.isSelected = true;
+                        } else if (this.hunters[0].contains(pos)) {
+                            this.hunters[0].isSelected = true;
+                        } else if (this.tiger.isSelected && this.tiger.pos.distanceTo(pos) <= HAND_SPAN) {
+                            this.tiger.pos = pos;
+                            this.tiger.isSelected = false;
+                        } else if (this.hunters[0].isSelected && this.hunters[0].pos.distanceTo(pos) <= HAND_SPAN) {
+                            this.hunters[0].pos = pos;
+                            this.hunters[0].isSelected = false;
+                        }
+                        
+                        this.draw();
+                    });
+                    
+                    this.draw();
+                    document.getElementById('turn-indicator').textContent = "TIGER'S TURN";
+                    document.getElementById('status').textContent = "Click a piece, then click in range.";
+                }
+
+                draw() {
+                    this.ctx.fillStyle = '#ecf0f1';
+                    this.ctx.fillRect(0, 0, 800, 800);
+                    
+                    // Range indicator
+                    const selected = this.tiger.isSelected ? this.tiger : (this.hunters[0].isSelected ? this.hunters[0] : null);
+                    if (selected) {
+                        this.ctx.strokeStyle = 'rgba(241, 196, 15, 0.6)';
+                        this.ctx.lineWidth = 4;
+                        this.ctx.beginPath();
+                        this.ctx.arc(selected.pos.x, selected.pos.y, HAND_SPAN, 0, Math.PI * 2);
+                        this.ctx.stroke();
+                    }
+                    
+                    this.tiger.draw(this.ctx);
+                    this.hunters[0].draw(this.ctx);
+                    document.getElementById('turn-indicator').textContent = `${this.turn}'S TURN`;
+                }
+            }
+
+            document.getElementById('status').textContent = "Creating game instance...";
+            const game = new Game();
+            document.getElementById('reset-btn').addEventListener('click', () => game.draw());
+            
+            document.getElementById('status').textContent = "SUCCESS! Game is running.";
+        }
+    </script>
+</body>
+</html>
