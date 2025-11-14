@@ -1,6 +1,6 @@
 import { Game } from './game.js';
 import { Renderer } from './renderer.js';
-import { Vector2 } from './entities.js'; // ← CRITICAL: Import Vector2
+import { Vector2 } from './entities.js';
 import * as Systems from './systems.js';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -19,10 +19,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let selectedPiece = null;
     let dragPreview = null;
+    let lastTime = performance.now();
 
     // SELECT PIECE (first click)
     canvas.addEventListener('mousedown', (e) => {
-        if (game.winner) return;
+        if (game.winner || game.isAnimating()) return;
         
         const rect = canvas.getBoundingClientRect();
         const clickPos = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
@@ -34,6 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
             canvas.style.cursor = 'grabbing';
             const movesLeft = game.turn === 'HUNTERS' ? ` (${5 - game.huntersMoved.size} moves left)` : '';
             statusDiv.textContent = `${piece.isTiger ? 'TIGER' : 'HUNTER'} selected${movesLeft}. Click within yellow ring to move.`;
+            console.log('Selected:', piece.isTiger ? 'Tiger' : 'Hunter');
         }
     });
 
@@ -43,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const rect = canvas.getBoundingClientRect();
             const hoverPos = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
             const piece = game.selectPiece(hoverPos);
-            canvas.style.cursor = piece ? 'pointer' : 'default';
+            canvas.style.cursor = piece && !game.isAnimating() ? 'pointer' : 'default';
             dragPreview = null;
             return;
         }
@@ -54,20 +56,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // MOVE PIECE (second click)
     canvas.addEventListener('mouseup', (e) => {
-        if (!selectedPiece) return;
+        if (!selectedPiece || game.isAnimating()) return;
         
         const rect = canvas.getBoundingClientRect();
         const targetPos = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
         
+        console.log('Attempting move to:', targetPos);
         game.movePiece(selectedPiece, targetPos);
         
         selectedPiece = null;
         dragPreview = null;
         canvas.style.cursor = 'pointer';
-        updateUI();
     });
 
     resetBtn.addEventListener('click', () => {
+        if (game.isAnimating()) return;
+        
         game.reset();
         selectedPiece = null;
         dragPreview = null;
@@ -88,24 +92,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 const remaining = 5 - game.huntersMoved.size;
                 turnIndicator.textContent += ` (${remaining} moves left)`;
             }
+            
+            if (game.isAnimating()) {
+                turnIndicator.textContent += ' - Animating...';
+            }
         }
     }
 
     function gameLoop() {
+        const currentTime = performance.now();
+        const deltaTime = currentTime - lastTime;
+        lastTime = currentTime;
+        
+        // Update game animations
+        const isAnimating = game.update(currentTime);
+        if (isAnimating) {
+            updateUI(); // Update "Animating..." text
+        }
+
         renderer.clear();
         renderer.drawZones();
         
         // Draw Roar effect if active
-        if (game.roarActive && game.turn === 'TIGER') {
+        if (game.roarActive && game.turn === 'TIGER' && !game.isAnimating()) {
             renderer.drawRoarEffect(game.tiger.pos, game.hunters, game.center);
         }
         
-        // Draw range indicator
-        if (selectedPiece) {
+        // Draw range indicator for selected piece
+        if (selectedPiece && !game.isAnimating()) {
             renderer.drawRangeIndicator(selectedPiece.pos, Systems.HAND_SPAN);
         }
         
-        // Draw game pieces
+        // Draw all pieces with game state
         renderer.draw(game.getAllPieces(), {
             winner: game.winner,
             winningHunters: game.winningHunters,
@@ -116,7 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         // Draw drag preview line
-        if (selectedPiece && dragPreview) {
+        if (selectedPiece && dragPreview && !game.isAnimating()) {
             renderer.ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
             renderer.ctx.lineWidth = 2;
             renderer.ctx.setLineDash([5, 5]);
@@ -130,7 +148,6 @@ document.addEventListener('DOMContentLoaded', () => {
         requestAnimationFrame(gameLoop);
     }
 
-    // Start game
     updateUI();
     statusDiv.textContent = "Game ready! Click the RED TIGER to begin.";
     gameLoop();
