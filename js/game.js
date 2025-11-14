@@ -32,7 +32,6 @@ export class Game {
         this.moveHistory = [];
         this.animationQueue = [];
         this.processingAction = false;
-        this.pounceChainActive = false; // NEW: Track pounce chain state
     }
     
     getAllPieces() {
@@ -69,7 +68,6 @@ export class Game {
         if (piece.isTiger) {
             if (dist > Systems.HAND_SPAN) return;
             
-            // Clamp Tiger to Clearing boundary
             const maxCenterDist = Systems.CLEARING_RADIUS - piece.radius;
             if (targetPos.distanceTo(this.center) > maxCenterDist) {
                 const angle = Math.atan2(targetPos.y - this.center.y, targetPos.x - this.center.x);
@@ -92,7 +90,6 @@ export class Game {
     }
     
     executeTigerTurn(targetPos) {
-        // Clamp and set Tiger position
         const maxDistanceFromCenter = Systems.CLEARING_RADIUS - this.tiger.radius;
         const distanceFromCenter = targetPos.distanceTo(this.center);
         
@@ -106,26 +103,22 @@ export class Game {
             this.tiger.pos = targetPos.clone();
         }
         
-        // Start animation for initial move
         this.processingAction = true;
-        this.pounceChainActive = false; // Reset chain state
         this.tiger.startAnimation(this.tiger.pos);
         
         setTimeout(() => {
             this.tiger.updateAnimation(this.tiger.animationEnd);
             
-            // Check for landed hunter specifically
             const landedHunter = this.hunters.find(h => 
                 !h.incapacitated && !h.isRemoved && 
                 this.tiger.pos.distanceTo(h.pos) <= this.tiger.radius + h.radius
             );
             
             if (landedHunter) {
-                console.log("LANDED on hunter, starting chain!");
-                this.pounceChainActive = true;
+                console.log("=== TIGER LANDED ON HUNTER ===");
+                console.log("Landed hunter at:", landedHunter.pos);
                 this.processPounceChain(landedHunter);
             } else {
-                // No landed hunter, check for Roar
                 this.roarActive = Systems.getPounceTargets(this.tiger.pos, this.hunters, this.center, this.tiger.radius).length > 0;
                 if (this.roarActive) console.log("ROAR!");
                 
@@ -137,65 +130,66 @@ export class Game {
     }
     
     processPounceChain(initialHunter) {
-        console.log("Processing pounce chain...");
+        console.log("=== Starting Pounce Chain ===");
         
-        // First, pounce the landed hunter
+        // Pounce the landed hunter
         initialHunter.incapacitated = true;
-        let currentPos = initialHunter.pos;
+        console.log("Pounced initial hunter:", initialHunter.pos);
         
-        // Check victory immediately after first pounce
         if (Systems.checkTigerVictory(this.hunters)) {
             this.winner = 'TIGER';
-            this.pounceChainActive = false;
             this.processingAction = false;
             return;
         }
         
-        // Now check for chain pounces
-        this.checkNextPounce(currentPos);
+        // Check for chain pounces from current Tiger position
+        this.performNextPounce();
     }
     
-    checkNextPounce(fromPos) {
-        console.log("Checking for next pounce from:", fromPos);
+    performNextPounce() {
+        console.log("--- Checking for next pounce ---");
+        console.log("Tiger position:", this.tiger.pos);
         
-        // Find hunters in range from current position
-        const targets = Systems.getPounceTargets(fromPos, this.hunters, this.center, this.tiger.radius);
+        const targets = Systems.getPounceTargets(this.tiger.pos, this.hunters, this.center, this.tiger.radius);
         
-        // Filter out already-pounced hunters (should already be filtered by getPounceTargets)
-        const availableTargets = targets.filter(h => !h.incapacitated);
+        console.log("Targets found:", targets.length);
+        targets.forEach((t, i) => console.log(`  ${i}: Hunter at (${t.pos.x}, ${t.pos.y})`));
         
-        console.log("Available targets:", availableTargets.length);
-        
-        if (!availableTargets.length) {
-            console.log("Pounce chain ended.");
+        if (!targets.length) {
+            console.log("No more targets. Ending Tiger turn.");
             this.turn = 'HUNTERS';
             this.huntersMoved.clear();
             this.processingAction = false;
-            this.pounceChainActive = false;
             return;
         }
         
-        // Pounce the nearest available target
-        const target = availableTargets[0];
-        target.incapacitated = true;
-        console.log("Pouncing hunter at:", target.pos);
+        // Get the nearest target
+        const target = targets[0];
         
-        // Animate Tiger to target position
+        // Safety check: don't pounce if already incapacitated (shouldn't happen)
+        if (target.incapacitated) {
+            console.log("ERROR: Target is already incapacitated!", target);
+            this.performNextPounce(); // Skip and try next
+            return;
+        }
+        
+        console.log("Pouncing hunter at:", target.pos);
+        target.incapacitated = true;
+        
+        // Animate Tiger to the target
         this.tiger.startAnimation(target.pos);
         
         setTimeout(() => {
             this.tiger.updateAnimation(this.tiger.animationEnd);
             
-            // Check victory
             if (Systems.checkTigerVictory(this.hunters)) {
                 this.winner = 'TIGER';
                 this.processingAction = false;
-                this.pounceChainActive = false;
                 return;
             }
             
-            // Check for next pounce from this hunter's position
-            this.checkNextPounce(target.pos);
+            // Continue chain from new position
+            this.performNextPounce();
         }, this.tiger.animationDuration);
     }
     
