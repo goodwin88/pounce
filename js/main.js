@@ -1,8 +1,8 @@
 import { Game } from './game.js';
 import { Renderer } from './renderer.js';
+import { Vector2 } from './entities.js'; // ← CRITICAL: Import Vector2
 import * as Systems from './systems.js';
 
-// Wait for DOM to be ready
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('gameCanvas');
     const turnIndicator = document.getElementById('turn-indicator');
@@ -18,27 +18,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderer = new Renderer(canvas);
 
     let selectedPiece = null;
-    let dragPreview = null; // For visual feedback only
-
-    // Helper: Create position object with distanceTo method
-    function createVector(x, y) {
-        return {
-            x: x,
-            y: y,
-            distanceTo(other) {
-                return Math.sqrt((this.x - other.x) ** 2 + (this.y - other.y) ** 2);
-            }
-        };
-    }
+    let dragPreview = null;
 
     // SELECT PIECE (first click)
     canvas.addEventListener('mousedown', (e) => {
         if (game.winner) return;
         
         const rect = canvas.getBoundingClientRect();
-        const clickPos = createVector(e.clientX - rect.left, e.clientY - rect.top);
+        const clickPos = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
         
-        // Try to select a piece at click position
         const piece = game.selectPiece(clickPos);
         
         if (piece) {
@@ -46,48 +34,39 @@ document.addEventListener('DOMContentLoaded', () => {
             canvas.style.cursor = 'grabbing';
             const movesLeft = game.turn === 'HUNTERS' ? ` (${5 - game.huntersMoved.size} moves left)` : '';
             statusDiv.textContent = `${piece.isTiger ? 'TIGER' : 'HUNTER'} selected${movesLeft}. Click within yellow ring to move.`;
-            console.log('Selected:', piece.isTiger ? 'Tiger' : 'Hunter');
         }
     });
 
-    // DRAG PREVIEW (visual only)
+    // DRAG PREVIEW (visual feedback)
     canvas.addEventListener('mousemove', (e) => {
         if (!selectedPiece) {
-            // Hover cursor
             const rect = canvas.getBoundingClientRect();
-            const hoverPos = createVector(e.clientX - rect.left, e.clientY - rect.top);
+            const hoverPos = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
             const piece = game.selectPiece(hoverPos);
             canvas.style.cursor = piece ? 'pointer' : 'default';
             dragPreview = null;
             return;
         }
         
-        // Show drag preview line
         const rect = canvas.getBoundingClientRect();
-        dragPreview = createVector(e.clientX - rect.left, e.clientY - rect.top);
+        dragPreview = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
     });
 
     // MOVE PIECE (second click)
     canvas.addEventListener('mouseup', (e) => {
-        if (!selectedPiece) return; // Don't require dragPreview
+        if (!selectedPiece) return;
         
         const rect = canvas.getBoundingClientRect();
-        const targetPos = createVector(e.clientX - rect.left, e.clientY - rect.top);
+        const targetPos = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
         
-        console.log('Attempting move to:', targetPos);
-        
-        // Execute the move
         game.movePiece(selectedPiece, targetPos);
         
-        // Reset selection
         selectedPiece = null;
         dragPreview = null;
         canvas.style.cursor = 'pointer';
-        
         updateUI();
     });
 
-    // Reset button
     resetBtn.addEventListener('click', () => {
         game.reset();
         selectedPiece = null;
@@ -100,10 +79,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (game.winner) {
             turnIndicator.textContent = `${game.winner} WINS!`;
             turnIndicator.style.color = '#e74c3c';
-            statusDiv.innerHTML = `<span style="color: #27ae60; font-weight: bold;">${game.winner} claim victory!</span>`;
+            statusDiv.innerHTML = `<span style="color: #27ae60; font-weight: bold;">Victory!</span>`;
         } else {
             turnIndicator.textContent = `${game.turn}'s Turn`;
             turnIndicator.style.color = game.turn === 'TIGER' ? '#e74c3c' : '#27ae60';
+            
+            if (game.turn === 'HUNTERS') {
+                const remaining = 5 - game.huntersMoved.size;
+                turnIndicator.textContent += ` (${remaining} moves left)`;
+            }
         }
     }
 
@@ -116,12 +100,12 @@ document.addEventListener('DOMContentLoaded', () => {
             renderer.drawRoarEffect(game.tiger.pos, game.hunters, game.center);
         }
         
-        // Draw range indicator for selected piece
+        // Draw range indicator
         if (selectedPiece) {
             renderer.drawRangeIndicator(selectedPiece.pos, Systems.HAND_SPAN);
         }
         
-        // Draw all pieces with game state
+        // Draw game pieces
         renderer.draw(game.getAllPieces(), {
             winner: game.winner,
             winningHunters: game.winningHunters,
@@ -146,9 +130,8 @@ document.addEventListener('DOMContentLoaded', () => {
         requestAnimationFrame(gameLoop);
     }
 
-    // Start the game loop
-    console.log('Starting game...');
+    // Start game
     updateUI();
-    statusDiv.textContent = "Game ready! Click the RED TIGER piece to begin.";
+    statusDiv.textContent = "Game ready! Click the RED TIGER to begin.";
     gameLoop();
 });
