@@ -27,7 +27,7 @@ export class Game {
         this.huntersMoved = new Set();
         this.selectedPiece = null;
         this.roarActive = false;
-        self.winner = null;
+        this.winner = null;
         this.winningHunters = null;
         this.moveHistory = [];
         this.animationQueue = [];
@@ -52,7 +52,8 @@ export class Game {
             for (let hunter of this.hunters) {
                 if (!hunter.incapacitated && !hunter.isRemoved &&
                     hunter.pos.distanceTo(pos) <= hunter.radius &&
-                    !this.huntersMoved.has(hunter)) {
+                    !this.huntersMoved.has(hunter) && // Skip if already moved/rescued
+                    !hunter.hasMoved) { // NEW: Skip if rescued this turn
                     return hunter;
                 }
             }
@@ -109,14 +110,12 @@ export class Game {
         setTimeout(() => {
             this.tiger.updateAnimation(this.tiger.animationEnd);
             
-            // Check if Tiger landed ON a hunter (collision)
             const landedHunter = Systems.getLandedHunter(this.tiger.pos, this.hunters, this.tiger.radius);
             
             if (landedHunter) {
                 console.log("=== TIGER LANDED ON HUNTER ===");
                 this.processPounceChain(landedHunter);
             } else {
-                // Check for Roar (hunters within HAND_SPAN)
                 this.roarActive = Systems.getHuntersInPounceRange(this.tiger.pos, this.hunters, this.center, Systems.HAND_SPAN).length > 0;
                 if (this.roarActive) console.log("ROAR!");
                 
@@ -129,9 +128,6 @@ export class Game {
     
     processPounceChain(initialHunter) {
         console.log("=== Starting Pounce Chain ===");
-        console.log("Initial hunter at:", initialHunter.pos);
-        
-        // Pounce the landed hunter
         initialHunter.incapacitated = true;
         
         if (Systems.checkTigerVictory(this.hunters)) {
@@ -140,24 +136,14 @@ export class Game {
             return;
         }
         
-        // Check for additional hunters within HAND_SPAN
         this.performNextPounce(this.tiger.pos);
     }
     
     performNextPounce(fromPos) {
-        console.log("--- Checking for next pounce from Tiger position:", fromPos);
-        
-        // Find hunters within HAND_SPAN (not collision distance!)
         const targets = Systems.getHuntersInPounceRange(fromPos, this.hunters, this.center, Systems.HAND_SPAN);
         
-        console.log(`Found ${targets.length} hunters within ${Systems.HAND_SPAN}px`);
-        targets.forEach((t, i) => {
-            const dist = fromPos.distanceTo(t.pos);
-            console.log(`  ${i}: Hunter at (${t.pos.x}, ${t.pos.y}) - distance: ${dist.toFixed(2)}px`);
-        });
-        
         if (!targets.length) {
-            console.log("No more hunters in range. Ending turn.");
+            console.log("Pounce chain ended.");
             this.turn = 'HUNTERS';
             this.huntersMoved.clear();
             this.processingAction = false;
@@ -168,7 +154,6 @@ export class Game {
         console.log("Pouncing hunter at:", target.pos);
         target.incapacitated = true;
         
-        // Animate Tiger to the target
         this.tiger.startAnimation(target.pos);
         
         setTimeout(() => {
@@ -180,7 +165,6 @@ export class Game {
                 return;
             }
             
-            // Continue chain from new position
             this.performNextPounce(target.pos);
         }, this.tiger.animationDuration);
     }
@@ -202,7 +186,9 @@ export class Game {
             if (rescued) {
                 rescued.incapacitated = false;
                 rescued.borderlandsTurns = 0;
-                console.log("Hunter rescued!");
+                rescued.hasMoved = true; // CRITICAL: Cannot move this turn
+                this.huntersMoved.add(rescued); // Add to moved set to block selection
+                console.log("Hunter rescued! Cannot move this turn.");
             }
             
             const activeHunters = this.hunters.filter(h => !h.incapacitated && !h.isRemoved);
@@ -211,7 +197,7 @@ export class Game {
                 this.turn = 'TIGER';
                 this.huntersMoved.clear();
                 this.hunters.forEach(h => {
-                    h.hasMoved = false;
+                    h.hasMoved = false; // Reset for next turn
                     h.moveOrder = null;
                 });
                 this.enforceCampingPenalty();
