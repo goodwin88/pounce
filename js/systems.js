@@ -17,10 +17,10 @@ export function isInBorderlands(pos, center) {
     return dist > CLEARING_RADIUS && dist <= CLEARING_RADIUS + BORDERLANDS_WIDTH;
 }
 
-export function getPounceTargets(fromPos, hunters, center) {
+export function getPounceTargets(fromPos, hunters, center, tigerRadius = 30) {
     return hunters
         .filter(h => {
-            // Skip incapacitated or removed hunters
+            // Skip incapacitated/removed hunters
             if (h.incapacitated || h.isRemoved) return false;
             
             // Must be in Clearing to be pounced
@@ -28,8 +28,7 @@ export function getPounceTargets(fromPos, hunters, center) {
             
             // Edge-to-edge collision detection
             const centerDistance = distance(fromPos, h.pos);
-            // Tiger radius is 30, Hunter radius is 15
-            const edgeDistance = centerDistance - (fromPos.radius || 30) - h.radius;
+            const edgeDistance = centerDistance - tigerRadius - h.radius;
             
             // If edges overlap or touch, it's a valid pounce
             return edgeDistance <= 0;
