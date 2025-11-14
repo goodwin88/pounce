@@ -5,80 +5,40 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tiger & Hunters</title>
     <style>
-        body {
-            margin: 0;
-            padding: 20px;
-            background: #2c3e50;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
-        #game-container {
-            display: flex;
-            gap: 20px;
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        }
-        canvas {
-            border: 2px solid #34495e;
-            cursor: pointer;
-        }
-        #ui {
-            width: 250px;
-        }
-        #turn-indicator {
-            color: #e74c3c;
-            margin: 0 0 20px 0;
-        }
-        #reset-btn {
-            width: 100%;
-            padding: 10px;
-            background: #3498db;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            font-size: 16px;
-            cursor: pointer;
-            margin-bottom: 20px;
-        }
-        #reset-btn:hover {
-            background: #2980b9;
-        }
-        #rules {
-            font-size: 14px;
-            color: #34495e;
-        }
+        body { margin: 0; padding: 20px; background: #2c3e50; font-family: sans-serif; }
+        #game-container { display: flex; gap: 20px; background: white; padding: 20px; border-radius: 10px; }
+        canvas { border: 2px solid #34495e; cursor: pointer; }
+        #ui { width: 250px; }
+        #turn-indicator { color: #e74c3c; margin: 0 0 20px 0; }
+        #reset-btn { width: 100%; padding: 10px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        #debug { font-size: 12px; color: #c0392b; margin-top: 20px; font-family: monospace; }
     </style>
 </head>
 <body>
-<!-- Add this line -->
-    <div style="display:none;">Version: 1.0.1 - <!--#echo var="DATE_LOCAL" --></div>
     <div id="game-container">
         <canvas id="gameCanvas" width="800" height="800"></canvas>
         <div id="ui">
-            <h1 id="turn-indicator">Tiger's Turn</h1>
+            <h1 id="turn-indicator">Loading...</h1>
             <button id="reset-btn">New Game</button>
             <div id="rules">
                 <h3>How to Play</h3>
-                <p><strong>Tiger:</strong> Move & pounce to incapacitate all Hunters.</p>
-                <p><strong>Hunters:</strong> Form a triangle around the Tiger in the Clearing.</p>
                 <p>Click a piece, then click where you want it to move.</p>
             </div>
+            <div id="debug"></div>
         </div>
     </div>
 
     <script>
-        // --- ENTITIES (Combined in one file) ---
+        console.log("SCRIPT STARTED"); // Debug line 1
+
+        // --- Simple Vector ---
         class Vector2 {
             constructor(x, y) { this.x = x; this.y = y; }
             distanceTo(other) { return Math.sqrt((this.x - other.x) ** 2 + (this.y - other.y) ** 2); }
             clone() { return new Vector2(this.x, this.y); }
         }
 
+        // --- Piece ---
         class Piece {
             constructor(pos, color, isTiger = false) {
                 this.pos = pos;
@@ -89,6 +49,7 @@
             }
             
             draw(ctx) {
+                console.log(`Drawing piece at ${this.pos.x}, ${this.pos.y}`); // Debug each piece
                 const color = this.incapacitated ? '#333333' : this.color;
                 ctx.fillStyle = color;
                 ctx.beginPath();
@@ -106,34 +67,92 @@
             }
         }
 
-        // --- SYSTEMS ---
+        // --- Constants ---
         const HAND_SPAN = 150;
         const CLEARING_RADIUS = 300;
         const BORDERLANDS_WIDTH = HAND_SPAN;
+        const CENTER = new Vector2(400, 400);
 
-        function distance(p1, p2) { return p1.distanceTo(p2); }
-        function isInClearing(pos, center) { return distance(pos, center) <= CLEARING_RADIUS; }
-        function isInBorderlands(pos, center) {
-            const dist = distance(pos, center);
-            return dist > CLEARING_RADIUS && dist <= CLEARING_RADIUS + BORDERLANDS_WIDTH;
+        console.log("CONSTANTS DEFINED"); // Debug line 2
+
+        // --- Game ---
+        class Game {
+            constructor() {
+                console.log("Game constructor called"); // Debug line 3
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.center = CENTER;
+                this.reset();
+            }
+            
+            reset() {
+                console.log("Resetting game..."); // Debug line 4
+                this.tiger = new Piece(this.center.clone(), '#e74c3c', true);
+                
+                // Place hunters visibly in Borderlands
+                this.hunters = [];
+                for (let i = 0; i < 5; i++) {
+                    const angle = (i * 72) * Math.PI / 180; // 72 degrees apart
+                    const dist = CLEARING_RADIUS + 50; // Explicitly visible
+                    const pos = new Vector2(
+                        this.center.x + Math.cos(angle) * dist,
+                        this.center.y + Math.sin(angle) * dist
+                    );
+                    this.hunters.push(new Piece(pos, '#27ae60'));
+                }
+                
+                this.turn = 'TIGER';
+                this.huntersMoved = new Set();
+                this.selectedPiece = null;
+                this.winner = null;
+                
+                console.log(`Tiger at: ${this.tiger.pos.x}, ${this.tiger.pos.y}`);
+                console.log(`Hunters: ${this.hunters.length} pieces`);
+            }
+            
+            draw() {
+                console.log("Draw called"); // Debug line 5
+                // Clear
+                this.ctx.fillStyle = '#ecf0f1';
+                this.ctx.fillRect(0, 0, 800, 800);
+                
+                // Draw zones
+                this.ctx.strokeStyle = '#f39c12';
+                this.ctx.lineWidth = 3;
+                this.ctx.beginPath();
+                this.ctx.arc(this.center.x, this.center.y, CLEARING_RADIUS, 0, Math.PI * 2);
+                this.ctx.stroke();
+                
+                this.ctx.strokeStyle = '#3498db';
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.arc(this.center.x, this.center.y, CLEARING_RADIUS + BORDERLANDS_WIDTH, 0, Math.PI * 2);
+                this.ctx.stroke();
+                
+                // Draw pieces
+                this.tiger.draw(this.ctx);
+                this.hunters.forEach(h => h.draw(this.ctx));
+            }
         }
 
-        function getPounceTargets(fromPos, hunters, center) {
-            return hunters
-                .filter(h => !h.incapacitated && 
-                             distance(fromPos, h.pos) <= HAND_SPAN &&
-                             isInClearing(h.pos, center))
-                .sort((a, b) => distance(fromPos, a.pos) - distance(fromPos, b.pos));
-        }
+        // --- Initialization ---
+        console.log("Before window.onload"); // Debug line 6
 
-        function isPointInTriangle(point, vertices) {
-            const [A, B, C] = vertices;
-            const denom = (B.y - C.y) * (A.x - C.x) + (C.x - B.x) * (A.y - C.y);
-            const a = ((B.y - C.y) * (point.x - C.x) + (C.x - B.x) * (point.y - C.y)) / denom;
-            const b = ((C.y - A.y) * (point.x - C.x) + (A.x - C.x) * (point.y - C.y)) / denom;
-            const c = 1 - a - b;
-            return a >= 0 && a <= 1 && b >= 0 && b <= 1 && c >= 0 && c <= 1;
-        }
+        window.addEventListener('load', () => {
+            console.log("Window loaded - starting game"); // Debug line 7
+            
+            try {
+                const game = new Game();
+                game.draw();
+                document.getElementById('turn-indicator').textContent = "Tiger's Turn - Click to Start!";
+                console.log("Game initialized successfully"); // Debug line 8
+            } catch (error) {
+                console.error("CRASH:", error);
+                document.getElementById('debug').textContent = `ERROR: ${error.message}`;
+            }
+        });
 
-        function checkHunterVictory(tiger, hunters, center) {
-            const activeInClearing =
+        console.log("Script ended"); // Debug line 9
+    </script>
+</body>
+</html>
