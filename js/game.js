@@ -9,8 +9,10 @@ export class Game {
     }
     
     reset() {
+        // Tiger always starts at center of Clearing
         this.tiger = new Piece(this.center.clone(), '#e74c3c', true);
         
+        // Hunters start evenly spaced in Borderlands
         this.hunters = [];
         const angleStep = (Math.PI * 2) / 5;
         for (let i = 0; i < 5; i++) {
@@ -28,10 +30,94 @@ export class Game {
         this.selectedPiece = null;
         this.roarActive = false;
         this.winner = null;
-        this.moveHistory = []; // NEW: Track hunter positions per turn
+        this.winningHunters = null;
+        this.moveHistory = []; // Tracks last 2 turns for camping penalty
     }
     
-    // ... [rest of existing methods until executeHunterTurn] ...
+    getAllPieces() {
+        return [this.tiger, ...this.hunters];
+    }
+    
+    selectPiece(pos) {
+        if (this.winner) return null;
+        
+        if (this.turn === 'TIGER' && this.tiger.pos.distanceTo(pos) <= this.tiger.radius) {
+            return this.tiger;
+        } else if (this.turn === 'HUNTERS') {
+            for (let hunter of this.hunters) {
+                if (!hunter.incapacitated && !hunter.isRemoved &&
+                    hunter.pos.distanceTo(pos) <= hunter.radius &&
+                    !this.huntersMoved.has(hunter)) {
+                    return hunter;
+                }
+            }
+        }
+        return null;
+    }
+    
+    movePiece(piece, targetPos) {
+        if (this.winner) return;
+        
+        const dist = piece.pos.distanceTo(targetPos);
+        
+        if (piece.isTiger) {
+            // Tiger can move up to hand span
+            if (dist > Systems.HAND_SPAN) return;
+            
+            // Cannot leave Clearing
+            if (!Systems.isInClearing(targetPos, this.center)) return;
+            
+            // Execute tiger turn
+            this.executeTigerTurn(targetPos);
+            
+        } else {
+            // Hunter movement
+            if (dist > Systems.HAND_SPAN) return;
+            
+            // Cannot leave play area
+            const maxDist = Systems.CLEARING_RADIUS + Systems.BORDERLANDS_WIDTH;
+            if (targetPos.distanceTo(this.center) > maxDist) return;
+            
+            this.executeHunterTurn(piece, targetPos);
+        }
+    }
+    
+    executeTigerTurn(targetPos) {
+        this.tiger.pos = targetPos.clone();
+        
+        // Check if landed on a hunter (pounce)
+        const landedHunter = this.hunters.find(h => 
+            h.pos.distanceTo(targetPos) < 10 && !h.incapacitated && !h.isRemoved
+        );
+        
+        if (landedHunter) {
+            // Chain pounce sequence
+            let currentPos = this.tiger.pos;
+            while (true) {
+                const targets = Systems.getPounceTargets(currentPos, this.hunters, this.center);
+                if (!targets.length) break;
+                
+                const target = targets[0];
+                target.incapacitated = true;
+                currentPos = target.pos;
+                
+                // Check for Tiger victory
+                if (Systems.checkTigerVictory(this.hunters)) {
+                    this.winner = 'TIGER';
+                    return;
+                }
+            }
+        } else {
+            // Check for Roar (threatens hunters next turn)
+            this.roarActive = Systems.getPounceTargets(this.tiger.pos, this.hunters, this.center).length > 0;
+            if (this.roarActive) {
+                console.log("ROAR!");
+            }
+        }
+        
+        this.turn = 'HUNTERS';
+        this.huntersMoved.clear();
+    }
     
     executeHunterTurn(hunter, targetPos) {
         // Move hunter
@@ -39,29 +125,23 @@ export class Game {
         hunter.hasMoved = true;
         this.huntersMoved.add(hunter);
         
-        // Rescue check
+        // Rescue check: move onto incapacitated hunter
         const rescued = this.hunters.find(h => 
             h !== hunter && h.incapacitated && h.pos.distanceTo(targetPos) < 10
         );
+        
         if (rescued) {
             rescued.incapacitated = false;
-            rescued.borderlandsTurns = 0; // Reset camping counter on rescue
+            rescued.borderlandsTurns = 0; // Reset camping counter
             console.log("Hunter rescued!");
         }
         
-        // Check if all hunters have moved
-        if (this.huntersMoved.size === this.hunters.filter(h => !h.incapacitated).length) {
+        // Check if all active hunters have moved
+        const activeHunters = this.hunters.filter(h => !h.incapacitated && !h.isRemoved);
+        if (this.huntersMoved.size === activeHunters.length) {
+            // Record positions for camping penalty tracking
+            this.recordTurnPositions();
             this.turn = 'TIGER';
-            const movedPositions = this.hunters.map(h => ({
-                hunter: h,
-                pos: h.pos.clone(),
-                inBorderlands: Systems.isInBorderlands(h.pos, this.center)
-            }));
-            this.moveHistory.push(movedPositions);
-            
-            // Keep only last 2 turns of history
-            if (this.moveHistory.length > 2) this.moveHistory.shift();
-            
             this.huntersMoved.clear();
             this.hunters.forEach(h => h.hasMoved = false);
             this.enforceCampingPenalty();
@@ -75,28 +155,42 @@ export class Game {
         }
     }
     
+    recordTurnPositions() {
+        const positions = this.hunters.map(h => ({
+            hunter: h,
+            pos: h.pos.clone(),
+            inBorderlands: Systems.isInBorderlands(h.pos, this.center)
+        }));
+        this.moveHistory.push(positions);
+        
+        // Keep only last 2 turns
+        if (this.moveHistory.length > 2) {
+            this.moveHistory.shift();
+        }
+    }
+    
     enforceCampingPenalty() {
+        // Need 2 complete turns to enforce
         if (this.moveHistory.length < 2) return;
         
+        // Only enforce if there are active hunters in Clearing
         const anyInClearing = this.hunters.some(h => 
-            !h.incapacitated && Systems.isInClearing(h.pos, this.center)
+            !h.incapacitated && !h.isRemoved && Systems.isInClearing(h.pos, this.center)
         );
-        
         if (!anyInClearing) return;
         
         // Check each hunter's position across last 2 turns
         const [turn1, turn2] = this.moveHistory.slice(-2);
         
         for (let hunter of this.hunters) {
-            if (hunter.incapacitated) continue;
+            if (hunter.incapacitated || hunter.isRemoved) continue;
             
-            const posInTurn1 = turn1.find(p => p.hunter === hunter);
-            const posInTurn2 = turn2.find(p => p.hunter === hunter);
+            const inBorderlandsTurn1 = turn1.find(p => p.hunter === hunter)?.inBorderlands;
+            const inBorderlandsTurn2 = turn2.find(p => p.hunter === hunter)?.inBorderlands;
             
-            if (posInTurn1?.inBorderlands && posInTurn2?.inBorderlands) {
-                console.log(`Hunter removed for camping!`);
-                hunter.incapacitated = true;
-                hunter.isRemoved = true; // Mark as removed vs incapacitated
+            if (inBorderlandsTurn1 && inBorderlandsTurn2) {
+                console.log(`Hunter removed for camping in Borderlands!`);
+                hunter.isRemoved = true; // Permanently remove, don't just incapacitate
             }
         }
     }
