@@ -51,6 +51,7 @@ export class Piece {
         this.hasMoved = false;
         this.isSelected = false;
         this.isVictoryPiece = false;
+        this.moveOrder = null;
         
         // Animation properties
         this.isAnimating = false;
@@ -58,7 +59,7 @@ export class Piece {
         this.animationEnd = null;
         this.animationStartPos = null;
         this.animationEndPos = null;
-        this.animationDuration = 300; // 300ms for smooth movement
+        this.animationDuration = 300;
     }
     
     startAnimation(targetPos) {
@@ -75,28 +76,25 @@ export class Piece {
         if (currentTime >= this.animationEnd) {
             this.pos = this.animationEndPos.clone();
             this.isAnimating = false;
-            return true; // Animation just finished
+            return true;
         }
         
         const progress = (currentTime - this.animationStart) / this.animationDuration;
         this.pos = this.animationStartPos.lerp(this.animationEndPos, progress);
-        return false; // Still animating
+        return false;
     }
     
     getDrawPosition() {
-        // Return current animated position
         return this.pos;
     }
     
     draw(ctx) {
         const drawPos = this.getDrawPosition();
         
-        // Visual override for removed hunters
         if (this.isRemoved) {
             ctx.globalAlpha = 0.15;
         }
         
-        // Tiger gets a glowing aura
         if (this.isTiger && !this.incapacitated) {
             ctx.shadowColor = this.color;
             ctx.shadowBlur = 25;
@@ -104,7 +102,6 @@ export class Piece {
             ctx.shadowBlur = 0;
         }
         
-        // Victory ring
         if (this.isVictoryPiece) {
             ctx.strokeStyle = '#2ecc71';
             ctx.lineWidth = 6;
@@ -113,7 +110,6 @@ export class Piece {
             ctx.stroke();
         }
         
-        // Selection ring
         if (this.isSelected) {
             ctx.strokeStyle = '#f1c40f';
             ctx.lineWidth = 4;
@@ -122,18 +118,15 @@ export class Piece {
             ctx.stroke();
         }
         
-        // Piece body
         const color = this.incapacitated ? '#333333' : this.color;
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(drawPos.x, drawPos.y, this.radius, 0, Math.PI * 2);
         ctx.fill();
         
-        // Reset effects
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 1.0;
         
-        // Removal mark (faded circle)
         if (this.isRemoved) {
             ctx.strokeStyle = '#95a5a6';
             ctx.lineWidth = 2;
@@ -142,9 +135,7 @@ export class Piece {
             ctx.arc(drawPos.x, drawPos.y, this.radius + 5, 0, Math.PI * 2);
             ctx.stroke();
             ctx.globalAlpha = 1.0;
-        } 
-        // Incapacitated mark (red X)
-        else if (this.incapacitated) {
+        } else if (this.incapacitated) {
             ctx.strokeStyle = '#e74c3c';
             ctx.lineWidth = 3;
             ctx.beginPath();
@@ -155,13 +146,12 @@ export class Piece {
             ctx.stroke();
         }
         
-        // Move order number
-        if (this.hasMoved && !this.incapacitated && !this.isRemoved) {
+        if (this.hasMoved && !this.incapacitated && !this.isRemoved && this.moveOrder) {
             ctx.fillStyle = 'white';
             ctx.font = 'bold 12px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(this.moveOrder || '', drawPos.x, drawPos.y);
+            ctx.fillText(this.moveOrder, drawPos.x, drawPos.y);
             ctx.textAlign = 'left';
         }
     }
