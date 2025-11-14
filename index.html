@@ -270,4 +270,230 @@
                 };
                 
                 this.canvas.style.cursor = 'grabbing';
-                logStatus(`Dragging ${piece
+                logStatus(`Dragging ${piece.isTiger ? 'Tiger' : 'Hunter'}...`);
+                this.draw();
+            }
+
+            endDrag() {
+                if (this.dragState.piece) {
+                    this.dragState.piece.isSelected = false;
+                }
+                this.dragState = { piece: null, offset: null, currentPos: null, isDragging: false };
+                this.canvas.style.cursor = 'grab';
+            }
+
+            cancelDrag() {
+                // Snap piece back to original position
+                if (this.dragState.piece) {
+                    this.dragState.piece.pos = this.dragState.piece.originalPos.clone();
+                }
+                this.endDrag();
+                logStatus("Move cancelled.");
+                this.draw();
+            }
+
+            getPieceAt(pos) {
+                if (this.tiger.contains(pos)) return this.tiger;
+                for (let h of this.hunters) {
+                    if (!h.incapacitated && h.contains(pos)) return h;
+                }
+                return null;
+            }
+
+            executeTigerMove(targetPos) {
+                this.tiger.pos = targetPos.clone();
+                
+                // Check for landed hunter
+                const landedHunter = this.hunters.find(h => 
+                    !h.incapacitated && h.pos.distanceTo(targetPos) < 10
+                );
+
+                if (landedHunter) {
+                    logStatus("Tiger pounced! Starting chain...");
+                    this.executePounceChain();
+                } else {
+                    const threatened = this.hunters.filter(h => 
+                        !h.incapacitated && h.pos.distanceTo(targetPos) <= HAND_SPAN
+                    ).length;
+                    if (threatened > 0) logStatus(`ROAR! ${threatened} Hunter(s) in range!`);
+                    this.endTigerTurn();
+                }
+            }
+
+            executePounceChain() {
+                let currentPos = this.tiger.pos;
+                let chain = 0;
+
+                while (true) {
+                    const targets = this.hunters
+                        .filter(h => !h.incapacitated && h.pos.distanceTo(currentPos) <= HAND_SPAN)
+                        .sort((a, b) => a.pos.distanceTo(currentPos) - b.pos.distanceTo(currentPos));
+
+                    if (!targets.length) break;
+
+                    const target = targets[0];
+                    target.incapacitated = true;
+                    chain++;
+                    currentPos = target.pos;
+                    logStatus(`Chain pounce #${chain}!`);
+
+                    if (this.hunters.every(h => h.incapacitated)) {
+                        this.winner = 'TIGER';
+                        logStatus("🎉 TIGER WINS!", "success");
+                        this.endGame();
+                        return;
+                    }
+                }
+
+                this.endTigerTurn();
+            }
+
+            endTigerTurn() {
+                // Clear selection and drag state
+                if (this.selectedPiece) this.selectedPiece.isSelected = false;
+                this.selectedPiece = null;
+                this.endDrag();
+                
+                // Reset Hunter moved flags
+                this.hunters.forEach(h => h.hasMoved = false);
+                
+                this.turn = 'HUNTERS';
+                this.huntersMoved.clear();
+                this.undoBuffer = [];
+                
+                document.getElementById('undo-btn').style.display = 'none';
+                logStatus("Hunters' turn - all Hunters refreshed (full color).");
+                this.draw();
+            }
+
+            executeHunterMove(hunter, targetPos) {
+                hunter.pos = targetPos.clone();
+                hunter.hasMoved = true;
+                this.huntersMoved.add(hunter);
+                logStatus("Hunter moved (now darker).");
+
+                const rescued = this.hunters.find(h => 
+                    h !== hunter && h.incapacitated && h.pos.distanceTo(targetPos) < 10
+                );
+
+                if (rescued) {
+                    rescued.incapacitated = false;
+                    logStatus("Hunter rescued!", "success");
+                }
+
+                this.hideUndoButtonIfInvalid();
+                this.checkVictory();
+                this.draw();
+            }
+
+            hideUndoButtonIfInvalid() {
+                // Hide undo if no longer valid to undo
+                const lastMove = this.undoBuffer[this.undoBuffer.length - 1];
+                if (!lastMove || lastMove.piece.hasMoved !== this.turn === 'HUNTERS') {
+                    document.getElementById('undo-btn').style.display = 'none';
+                }
+            }
+
+            checkVictory() {
+                // Tiger victory
+                if (this.hunters.every(h => h.incapacitated)) {
+                    this.winner = 'TIGER';
+                    logStatus("🎉 TIGER WINS!", "success");
+                    this.endGame();
+                    return;
+                }
+
+                // Hunter victory (simplified)
+                const activeInClearing = this.hunters.filter(h => 
+                    !h.incapacitated && h.pos.distanceTo(this.center) <= CLEARING_RADIUS
+                );
+
+                if (activeInClearing.length >= 3) {
+                    const nearTiger = activeInClearing.filter(h => h.pos.distanceTo(this.tiger.pos) <= 200);
+                    if (nearTiger.length >= 3) {
+                        this.winner = 'HUNTERS';
+                        logStatus("🎉 HUNTERS WIN! Triangle formed!", "success");
+                        this.endGame();
+                        return;
+                    }
+                }
+
+                // Check if all hunters moved
+                if (this.huntersMoved.size === this.hunters.length) {
+                    this.endTigerTurn();
+                } else {
+                    logStatus(`Select next Hunter (${5 - this.huntersMoved.size} remaining).`);
+                }
+            }
+
+            endGame() {
+                this.canvas.style.cursor = 'default';
+                document.getElementById('undo-btn').style.display = 'none';
+            }
+
+            draw() {
+                // Clear canvas
+                this.ctx.fillStyle = '#ecf0f1';
+                this.ctx.fillRect(0, 0, 800, 800);
+                
+                // Draw zones
+                this.ctx.strokeStyle = '#f39c12';
+                this.ctx.lineWidth = 3;
+                this.ctx.beginPath();
+                this.ctx.arc(this.center.x, this.center.y, CLEARING_RADIUS, 0, Math.PI * 2);
+                this.ctx.stroke();
+                
+                this.ctx.strokeStyle = '#3498db';
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.arc(this.center.x, this.center.y, CLEARING_RADIUS + BORDERLANDS_WIDTH, 0, Math.PI * 2);
+                this.ctx.stroke();
+
+                // Draw range indicator while dragging
+                if (this.dragState.isDragging) {
+                    const piece = this.dragState.piece;
+                    this.ctx.strokeStyle = 'rgba(241, 196, 15, 0.5)';
+                    this.ctx.lineWidth = 4;
+                    this.ctx.beginPath();
+                    this.ctx.arc(piece.originalPos.x, piece.originalPos.y, HAND_SPAN, 0, Math.PI * 2);
+                    this.ctx.stroke();
+
+                    // Distance label
+                    const dist = piece.originalPos.distanceTo(piece.pos);
+                    this.ctx.fillStyle = dist > HAND_SPAN ? '#e74c3c' : '#27ae60';
+                    this.ctx.font = 'bold 18px Arial';
+                    this.ctx.fillText(`${Math.round(dist)}/${HAND_SPAN}px`, 10, 30);
+                }
+                
+                // Draw pieces
+                this.tiger.draw(this.ctx);
+                this.hunters.forEach(h => h.draw(this.ctx));
+                
+                // Update turn indicator
+                const indicator = document.getElementById('turn-indicator');
+                if (this.winner) {
+                    indicator.textContent = `${this.winner} WINS!`;
+                    indicator.style.color = '#e74c3c';
+                } else {
+                    indicator.textContent = `${this.turn}'s Turn`;
+                    indicator.style.color = this.turn === 'TIGER' ? '#e74c3c' : '#27ae60';
+                }
+            }
+        }
+
+        // ========== START ==========
+        let game;
+        window.addEventListener('load', () => {
+            game = new Game();
+        });
+
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            if (game) game.reset();
+        });
+
+        document.getElementById('undo-btn').addEventListener('click', () => {
+            if (game) game.undoMove();
+        });
+    </script>
+</body>
+</html>
