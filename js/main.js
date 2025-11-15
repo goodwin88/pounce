@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let selectedPiece = null;
     let dragPreview = null;
-    let ghostPreview = null; // NEW: Ghost preview state
+    let ghostPreview = null;
     let lastTime = performance.now();
 
     canvas.addEventListener('mousedown', (e) => {
@@ -50,34 +50,32 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        // Calculate ghost preview position
+        // Calculate ghost preview position (clamped to range & zone)
         dragPreview = hoverPos;
         
-        // Only calculate ghost for Hunters (Tiger is AI-controlled)
+        // CRITICAL: For Hunters, calculate valid target even if cursor is out of range
         if (!selectedPiece.isTiger) {
             const dir = hoverPos.sub(selectedPiece.pos);
             const dist = dir.distanceTo(new Vector2(0, 0));
-            let targetPos = selectedPiece.pos.clone();
             
-            if (dist > 0) {
-                // Clamp to HAND_SPAN distance
-                const clampedDist = Math.min(dist, Systems.HAND_SPAN);
-                const normalized = dir.mult(1 / dist).mult(clampedDist);
-                targetPos = selectedPiece.pos.add(normalized);
-                
-                // Clamp to borderlands boundary
-                const maxDist = Systems.CLEARING_RADIUS + Systems.BORDERLANDS_WIDTH;
-                const distanceFromCenter = targetPos.distanceTo(game.center);
-                if (distanceFromCenter > maxDist) {
-                    const angle = Math.atan2(targetPos.y - game.center.y, targetPos.x - game.center.x);
-                    targetPos = new Vector2(
-                        game.center.x + Math.cos(angle) * maxDist,
-                        game.center.y + Math.sin(angle) * maxDist
-                    );
-                }
+            // Clamp to HAND_SPAN range, but keep direction
+            const clampedDist = Math.min(dist, Systems.HAND_SPAN);
+            const normalized = dist > 0 ? dir.mult(1 / dist).mult(clampedDist) : new Vector2(0, 0);
+            const targetPos = selectedPiece.pos.add(normalized);
+            
+            // Clamp to borderlands boundary
+            const maxDist = Systems.CLEARING_RADIUS + Systems.BORDERLANDS_WIDTH;
+            const distanceFromCenter = targetPos.distanceTo(game.center);
+            let finalPos = targetPos;
+            if (distanceFromCenter > maxDist) {
+                const angle = Math.atan2(targetPos.y - game.center.y, targetPos.x - game.center.x);
+                finalPos = new Vector2(
+                    game.center.x + Math.cos(angle) * maxDist,
+                    game.center.y + Math.sin(angle) * maxDist
+                );
             }
             
-            ghostPreview = { piece: selectedPiece, position: targetPos };
+            ghostPreview = { piece: selectedPiece, position: finalPos };
         }
     });
 
@@ -85,13 +83,36 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!selectedPiece || game.isAnimating()) return;
         
         const rect = canvas.getBoundingClientRect();
-        const targetPos = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
+        const rawTargetPos = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
+        
+        // Calculate clamped target position for Hunters
+        let targetPos = rawTargetPos;
+        if (!selectedPiece.isTiger) {
+            const dir = rawTargetPos.sub(selectedPiece.pos);
+            const dist = dir.distanceTo(new Vector2(0, 0));
+            
+            // Clamp to max range
+            const clampedDist = Math.min(dist, Systems.HAND_SPAN);
+            const normalized = dist > 0 ? dir.mult(1 / dist).mult(clampedDist) : new Vector2(0, 0);
+            targetPos = selectedPiece.pos.add(normalized);
+            
+            // Clamp to borderlands boundary
+            const maxDist = Systems.CLEARING_RADIUS + Systems.BORDERLANDS_WIDTH;
+            const distanceFromCenter = targetPos.distanceTo(game.center);
+            if (distanceFromCenter > maxDist) {
+                const angle = Math.atan2(targetPos.y - game.center.y, targetPos.x - game.center.x);
+                targetPos = new Vector2(
+                    game.center.x + Math.cos(angle) * maxDist,
+                    game.center.y + Math.sin(angle) * maxDist
+                );
+            }
+        }
         
         game.movePiece(selectedPiece, targetPos);
         
         selectedPiece = null;
         dragPreview = null;
-        ghostPreview = null; // Clear ghost on release
+        ghostPreview = null;
         canvas.style.cursor = 'pointer';
         game.updateUI();
     });
@@ -131,7 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderer.drawRoarEffect(game.tiger.pos, game.hunters, game.center);
         }
         
-        // Draw ghost preview (before range indicator and pieces)
+        // Draw ghost preview (before range indicator)
         if (ghostPreview && !game.isAnimating()) {
             renderer.drawGhostPreview(ghostPreview.piece, ghostPreview.position);
         }
