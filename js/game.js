@@ -11,7 +11,7 @@ export class Game {
         this.tigerRangeMultiplier = tigerRangeMultiplier;
         this.tigerAIEnabled = true;
         this.equidistantChoice = null;
-        this.terrain = null; // NEW
+        this.terrain = null;
         
         this.stats = {
             totalMoves: 0,
@@ -62,7 +62,6 @@ export class Game {
         const tigerDiameter = totalHunterDiameter * (this.difficulty / 5);
         this.tiger.radius = tigerDiameter / 2;
         
-        // NEW: Generate terrain after pieces
         this.terrain = this.generateTerrain();
         
         this.turn = 'TIGER';
@@ -87,7 +86,6 @@ export class Game {
         this.updateUI();
     }
     
-    // NEW: Terrain generation
     generateTerrain() {
         const tigerDiameter = this.tiger.radius * 2;
         const baseSide = tigerDiameter * 0.8;
@@ -98,7 +96,7 @@ export class Game {
         let attempts = 0;
         let center;
         do {
-            const r = Math.random() * Systems.CLEARING_RADIUS * 0.8; // Keep inside
+            const r = Math.random() * Systems.CLEARING_RADIUS * 0.8;
             const theta = Math.random() * Math.PI * 2;
             center = new Vector2(
                 this.center.x + r * Math.cos(theta),
@@ -110,7 +108,6 @@ export class Game {
         return new Terrain(center, width, height, angle);
     }
     
-    // NEW: Check terrain collision with starting positions
     isTerrainCollidingWithStart(center, width, height, angle) {
         const tempTerrain = new Terrain(center, width, height, angle);
         if (tempTerrain.containsPoint(this.tiger.pos)) return true;
@@ -163,7 +160,7 @@ export class Game {
             tiger: { 
                 pos: this.tiger.pos, 
                 incapacitated: this.tiger.incapacitated,
-                tigerRangeMultiplier: this.tigerRangeMultiplier
+                tigerRangeMultiplier: this.tiger.tigerRangeMultiplier
             },
             hunters: this.hunters.map(h => ({
                 pos: h.pos,
@@ -262,7 +259,6 @@ export class Game {
             return;
         }
         
-        // NEW: Terrain collision check
         if (this.terrain && this.terrain.containsPoint(targetPos)) {
             console.log("Move blocked: terrain collision");
             if (this.statusDiv) this.statusDiv.textContent = "Target is inside terrain! Choose another location.";
@@ -306,10 +302,43 @@ export class Game {
         }
     }
     
+    // === FIX #1: Check for compulsory pounce at turn start ===
+    checkCompulsoryPounce() {
+        const pounceRange = this.tiger.getTigerRange();
+        const targets = Systems.getHuntersInPounceRange(this.tiger.pos, this.hunters, this.center, pounceRange);
+        
+        if (targets.length === 0) return null;
+        
+        // Handle equidistant case
+        const equidistant = Systems.getEquidistantHunters(this.tiger.pos, this.hunters, this.center, pounceRange);
+        if (equidistant.length > 1) {
+            return this.tigerAIEnabled ? 
+                equidistant[Math.floor(Math.random() * equidistant.length)] :
+                null;
+        }
+        
+        return targets[0]; // Nearest single target
+    }
+    
     executeTigerTurn(targetPos) {
-        console.log("=== TIGER TURN START ===");
+        // === FIX #1: Compulsory pounce check - if any hunter in range, MUST pounce ===
+        const compulsoryPounceTarget = this.checkCompulsoryPounce();
+        if (compulsoryPounceTarget) {
+            console.log("=== COMPULSORY POUNCE TRIGGERED ===");
+            this.tiger.startAnimation(compulsoryPounceTarget.pos);
+            this.processingAction = true;
+            
+            setTimeout(() => {
+                this.tiger.updateAnimation(this.tiger.animationEnd);
+                this.processPounceChain(compulsoryPounceTarget);
+            }, this.tiger.animationDuration);
+            return; // Skip normal movement logic entirely
+        }
+        
+        // === Original movement logic (only runs if no compulsory pounce) ===
+        console.log("=== TIGER TURN START (no compulsory pounce) ===");
         const actualMoveDist = this.tiger.pos.distanceTo(targetPos);
-        const maxAllowedRange = this.tiger.getMoveRange();
+        const maxAllowedRange = this.tiger.getTigerRange();
         if (actualMoveDist > maxAllowedRange + 0.01) {
             const dir = targetPos.sub(this.tiger.pos);
             targetPos = this.tiger.pos.add(dir.normalize().mult(maxAllowedRange));
@@ -349,19 +378,18 @@ export class Game {
         }, this.tiger.animationDuration);
     }
     
+    // === FIX #2: Remove artificial delay from equidistant choice ===
     processEquidistantChoice(hunters) {
         console.log("Multiple equidistant hunters found:", hunters.length);
         this.equidistantChoice = hunters;
-        this.statusDiv.textContent = "Tiger AI: Multiple targets at same distance! Click to choose.";
+        this.statusDiv.textContent = "Tiger AI: Choosing target...";
         this.updateUI();
         
+        // Choose instantly - no delay
         const chosen = hunters[Math.floor(Math.random() * hunters.length)];
-        console.log("AI randomly chose hunter:", this.hunters.indexOf(chosen));
-        
-        setTimeout(() => {
-            this.equidistantChoice = null;
-            this.processPounceChain(chosen);
-        }, 1500);
+        console.log("AI chose hunter:", this.hunters.indexOf(chosen));
+        this.equidistantChoice = null;
+        this.processPounceChain(chosen);
     }
     
     processPounceChain(initialHunter) {
@@ -538,7 +566,6 @@ export class Game {
                 this.tiger.pos.y + Math.sin(angle) * aiMoveRange
             );
             
-            // Clamp to clearing boundary
             const maxCenterDist = Systems.CLEARING_RADIUS - this.tiger.radius;
             if (targetPos.distanceTo(this.center) > maxCenterDist) {
                 const clampAngle = Math.atan2(targetPos.y - this.center.y, targetPos.x - this.center.x);
@@ -548,13 +575,11 @@ export class Game {
                 );
             }
             
-            // Clamp to move range
             const dir = targetPos.sub(this.tiger.pos);
             const clampedDist = Math.min(dir.distanceTo(new Vector2(0, 0)), aiMoveRange);
             const normalized = clampedDist > 0 ? dir.mult(1 / dir.distanceTo(new Vector2(0, 0))) : new Vector2(0, 0);
             targetPos = this.tiger.pos.add(normalized.mult(clampedDist));
             
-            // Skip if target is in terrain
             if (this.terrain && this.terrain.containsPoint(targetPos)) continue;
             
             const pounceRange = this.tiger.getTigerRange();
