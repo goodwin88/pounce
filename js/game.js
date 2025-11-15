@@ -274,8 +274,9 @@ export class Game {
             // NEW: Check for  hunters
             const equidistant = Systems.getEquidistantHunters(this.tiger.pos, this.hunters, this.center, Systems.HAND_SPAN);
 if (equidistant.length > 1 && this.tigerAIEnabled) {
+    this.processingAction = false; // ✅ Clear flag before handling
     this.processEquidistantChoice(equidistant);
-    return;  // ❌ Flag stays true!
+    return;
 }
             
             const landedHunter = Systems.getLandedHunter(this.tiger.pos, this.hunters, this.tiger.radius);
@@ -314,9 +315,10 @@ if (equidistant.length > 1 && this.tigerAIEnabled) {
         }, 1500);
     }
     
-    processPounceChain(initialHunter) {
-        console.log("=== Starting Pounce Chain ===");
-        initialHunter.incapacitated = true;
+processPounceChain(initialHunter) {
+    console.log("=== Starting Pounce Chain ===");
+    this.processingAction = true; // ✅ Ensure flag is set for chain
+    initialHunter.incapacitated = true;
         this.stats.pounceChains.push({ huntersPounced: 1 });
         
         if (Systems.checkTigerVictory(this.hunters)) {
