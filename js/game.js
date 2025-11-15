@@ -2,13 +2,14 @@ import { Piece, Vector2 } from './entities.js';
 import * as Systems from './systems.js';
 
 export class Game {
-    constructor(canvas, turnIndicator, statusDiv) {
+    constructor(canvas, turnIndicator, statusDiv, difficulty = 3) {
         this.canvas = canvas;
         this.center = new Vector2(canvas.width / 2, canvas.height / 2);
         this.turnIndicator = turnIndicator;
         this.statusDiv = statusDiv;
-        this.reset();
+        this.difficulty = difficulty;
         this.tigerAIEnabled = true;
+        this.equidistantChoice = null; // NEW: For equidistant pouncing
         
         this.stats = {
             totalMoves: 0,
@@ -16,6 +17,8 @@ export class Game {
             campingRemovals: 0,
             triangleForms: 0
         };
+        
+        this.reset();
     }
     
     reset() {
@@ -23,11 +26,10 @@ export class Game {
         
         this.hunters = [];
         const angleStep = (Math.PI * 2) / 5;
-        
         const randomOffset = Math.random() * Math.PI * 2;
         
         const hunterProfiles = [
-            { diameter: 25, borderlandsTolerance: 4, canMoveAfterRescue: false, canMoveAfterBeingRescued: false, hunterType: 'standard' },
+            { diameter: 25, borderlandsTolerance: 3, canMoveAfterRescue: false, canMoveAfterBeingRescued: false, hunterType: 'standard' },
             { diameter: 20, borderlandsTolerance: 2, canMoveAfterRescue: true, canMoveAfterBeingRescued: true, hunterType: 'scout' },
             { diameter: 30, borderlandsTolerance: 5, canMoveAfterRescue: false, canMoveAfterBeingRescued: false, hunterType: 'veteran' },
             { diameter: 18, borderlandsTolerance: 3, canMoveAfterRescue: true, canMoveAfterBeingRescued: false, hunterType: 'medic' },
@@ -46,13 +48,17 @@ export class Game {
                 this.center.y + Math.sin(angle) * dist
             );
             
-            const hunter = new Piece(pos, '#27ae60', false, shuffledProfiles[i]);
+            const hunter = new Piece(pos, '#27ae60', false, {
+                ...shuffledProfiles[i],
+                hunterSpecials: Systems.HUNTER_SPECIALS
+            });
             this.hunters.push(hunter);
             
             totalHunterDiameter += shuffledProfiles[i].diameter;
         }
         
-        const tigerDiameter = totalHunterDiameter;
+        // NEW: Apply difficulty scaling
+        const tigerDiameter = totalHunterDiameter * (this.difficulty / 5);
         this.tiger.radius = tigerDiameter / 2;
         
         this.turn = 'TIGER';
@@ -65,6 +71,7 @@ export class Game {
         this.animationQueue = [];
         this.processingAction = false;
         this.aiThinking = false;
+        this.equidistantChoice = null;
         
         this.stats = {
             totalMoves: 0,
@@ -72,6 +79,8 @@ export class Game {
             campingRemovals: 0,
             triangleForms: 0
         };
+        
+        this.updateUI();
     }
     
     getAllPieces() {
@@ -94,13 +103,16 @@ export class Game {
             }
         } else if (this.aiThinking) {
             this.turnIndicator.textContent = 'Tiger Thinking...';
+        } else if (this.equidistantChoice) {
+            this.turnIndicator.textContent = 'Tiger: Choose Target!';
         } else {
+            const diffName = Systems.DIFFICULTY_LEVELS[this.difficulty].name;
             const turnText = `${this.turn === 'TIGER' ? 'Tiger' : 'Hunters'}'s Turn`;
             const totalMovable = this.hunters.filter(h => !h.incapacitated && !h.isRemoved).length;
             const movesLeft = this.turn === 'HUNTERS' 
                 ? ` (${this.hunters.filter(h => !h.hasMoved && !h.incapacitated && !h.isRemoved).length} of ${totalMovable} Hunters available)` 
                 : '';
-            this.turnIndicator.textContent = turnText + movesLeft;
+            this.turnIndicator.textContent = `${turnText}${movesLeft} - ${diffName}`;
         }
     }
     
@@ -123,7 +135,8 @@ export class Game {
             })),
             turn: this.turn,
             moveHistory: this.moveHistory,
-            stats: this.stats
+            stats: this.stats,
+            difficulty: this.difficulty
         });
     }
     
@@ -155,6 +168,7 @@ export class Game {
             this.turn = state.turn;
             this.moveHistory = state.moveHistory || [];
             this.stats = state.stats || this.stats;
+            this.difficulty = state.difficulty || 3;
             this.huntersMoved.clear();
             
             this.updateUI();
@@ -201,13 +215,14 @@ export class Game {
         }
         
         let dist = piece.pos.distanceTo(targetPos);
+        const moveRange = piece.getMoveRange(); // NEW: Use specialized range
         
         if (piece.isTiger) {
-            if (dist > Systems.HAND_SPAN + 0.01) {
-                console.log(`Tiger move exceeded ${Systems.HAND_SPAN}px, clamping to max range`);
+            // NEW: Strict clamping to exact move range
+            if (dist > moveRange + 0.01) {
                 const dir = targetPos.sub(piece.pos);
-                targetPos = piece.pos.add(dir.normalize().mult(Systems.HAND_SPAN));
-                dist = Systems.HAND_SPAN;
+                targetPos = piece.pos.add(dir.normalize().mult(moveRange));
+                dist = moveRange;
             }
             
             const maxCenterDist = Systems.CLEARING_RADIUS - piece.radius;
@@ -223,7 +238,12 @@ export class Game {
             this.executeTigerTurn(targetPos);
             
         } else {
-            if (dist > Systems.HAND_SPAN) return;
+            // NEW: Check hunter-specific move range
+            if (dist > moveRange + 0.01) {
+                const dir = targetPos.sub(piece.pos);
+                targetPos = piece.pos.add(dir.normalize().mult(moveRange));
+                dist = moveRange;
+            }
             
             const maxDist = Systems.CLEARING_RADIUS + Systems.BORDERLANDS_WIDTH;
             if (targetPos.distanceTo(this.center) > maxDist) return;
@@ -235,24 +255,28 @@ export class Game {
     
     executeTigerTurn(targetPos) {
         console.log("=== TIGER TURN START ===");
-        const maxDistanceFromCenter = Systems.CLEARING_RADIUS - this.tiger.radius;
-        const distanceFromCenter = targetPos.distanceTo(this.center);
         
-        if (distanceFromCenter > maxDistanceFromCenter) {
-            const angle = Math.atan2(targetPos.y - this.center.y, targetPos.x - this.center.x);
-            this.tiger.pos = new Vector2(
-                this.center.x + Math.cos(angle) * maxDistanceFromCenter,
-                this.center.y + Math.sin(angle) * maxDistanceFromCenter
-            );
-        } else {
-            this.tiger.pos = targetPos.clone();
+        // NEW: Strict enforcement of max move distance
+        const actualMoveDist = this.tiger.pos.distanceTo(targetPos);
+        if (actualMoveDist > this.tiger.getMoveRange() + 0.01) {
+            console.warn("Tiger move clamped to max range");
+            const dir = targetPos.sub(this.tiger.pos);
+            targetPos = this.tiger.pos.add(dir.normalize().mult(this.tiger.getMoveRange()));
         }
         
+        this.tiger.pos = targetPos.clone();
         this.processingAction = true;
         this.tiger.startAnimation(this.tiger.pos);
         
         setTimeout(() => {
             this.tiger.updateAnimation(this.tiger.animationEnd);
+            
+            // NEW: Check for equidistant hunters
+            const equidistant = Systems.getEquidistantHunters(this.tiger.pos, this.hunters, Systems.HAND_SPAN);
+            if (equidistant.length > 1 && this.tigerAIEnabled) {
+                this.processEquidistantChoice(equidistant);
+                return;
+            }
             
             const landedHunter = Systems.getLandedHunter(this.tiger.pos, this.hunters, this.tiger.radius);
             
@@ -271,6 +295,23 @@ export class Game {
                 this.updateUI();
             }
         }, this.tiger.animationDuration);
+    }
+    
+    // NEW: Handle equidistant hunter selection
+    processEquidistantChoice(hunters) {
+        console.log("Multiple equidistant hunters found:", hunters.length);
+        this.equidistantChoice = hunters;
+        this.statusDiv.textContent = "Tiger AI: Multiple targets at same distance! Click to choose.";
+        this.updateUI();
+        
+        // In AI mode, randomly choose one
+        const chosen = hunters[Math.floor(Math.random() * hunters.length)];
+        console.log("AI randomly chose hunter:", this.hunters.indexOf(chosen));
+        
+        setTimeout(() => {
+            this.equidistantChoice = null;
+            this.processPounceChain(chosen);
+        }, 1500);
     }
     
     processPounceChain(initialHunter) {
@@ -326,14 +367,27 @@ export class Game {
     
     executeHunterTurn(hunter, targetPos) {
         console.log(`=== HUNTER TURN: ${this.hunters.indexOf(hunter)} moving to ${targetPos.x},${targetPos.y} ===`);
+        
+        // NEW: Enforce hunter-specific move range
+        const moveRange = hunter.getMoveRange();
+        const actualDist = hunter.pos.distanceTo(targetPos);
+        if (actualDist > moveRange + 0.01) {
+            const dir = targetPos.sub(hunter.pos);
+            targetPos = hunter.pos.add(dir.normalize().mult(moveRange));
+        }
+        
         hunter.startAnimation(targetPos);
         this.processingAction = true;
         
         setTimeout(() => {
             hunter.updateAnimation(hunter.animationEnd);
             
+            // NEW: Use specialized rescue range
+            const rescueRange = hunter.getRescueRange();
+            const rescueThreshold = rescueRange > 0 ? rescueRange : hunter.radius + (this.hunters[0]?.radius || 15);
+            
             const rescued = this.hunters.find(h => 
-                h !== hunter && h.incapacitated && h.pos.distanceTo(hunter.pos) <= h.radius + hunter.radius
+                h !== hunter && h.incapacitated && h.pos.distanceTo(hunter.pos) <= rescueThreshold
             );
             
             if (!rescued || !hunter.canMoveAfterRescue) {
@@ -425,8 +479,8 @@ export class Game {
     
     calculateBestTigerMove() {
         const possibleTargets = [];
-        
         const samples = 12;
+        
         for (let angle = 0; angle < Math.PI * 2; angle += (Math.PI * 2) / samples) {
             const targetPos = new Vector2(
                 this.tiger.pos.x + Math.cos(angle) * Systems.HAND_SPAN,
@@ -450,7 +504,6 @@ export class Game {
             finalPos = this.tiger.pos.add(normalized.mult(clampedDist));
             
             const chainScore = this.simulatePounceChain(finalPos);
-            
             const centerBonus = (Systems.CLEARING_RADIUS - finalPos.distanceTo(this.center)) * 0.01;
             const randomBonus = Math.random() * 0.1;
             const finalScore = chainScore + centerBonus + randomBonus;
@@ -472,7 +525,8 @@ export class Game {
                 borderlandsTolerance: h.borderlandsTolerance,
                 canMoveAfterRescue: h.canMoveAfterRescue,
                 canMoveAfterBeingRescued: h.canMoveAfterBeingRescued,
-                hunterType: h.hunterType
+                hunterType: h.hunterType,
+                hunterSpecials: h.hunterSpecials
             });
             temp.incapacitated = h.incapacitated;
             temp.isRemoved = h.isRemoved;
@@ -523,7 +577,8 @@ export class Game {
         const [turn1, turn2, turn3] = this.moveHistory.slice(-3);
         
         for (let hunter of this.hunters) {
-            if (hunter.incapacitated || hunter.isRemoved) continue;
+            // NEW: Skip veteran hunters
+            if (hunter.incapacitated || hunter.isRemoved || hunter.isVeteran()) continue;
             
             const posInTurn1 = turn1.find(p => p.hunter === hunter);
             const posInTurn2 = turn2.find(p => p.hunter === hunter);
@@ -541,7 +596,7 @@ export class Game {
     }
     
     getCampingWarning(hunter) {
-        if (this.moveHistory.length < 2 || hunter.incapacitated || hunter.isRemoved) return 0;
+        if (this.moveHistory.length < 2 || hunter.incapacitated || hunter.isRemoved || hunter.isVeteran()) return 0;
         
         const anyInClearing = this.hunters.some(h => 
             !h.incapacitated && !h.isRemoved && Systems.isInClearing(h.pos, this.center)
