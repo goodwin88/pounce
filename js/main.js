@@ -14,7 +14,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    const game = new Game(canvas);
+    // PASS UI ELEMENTS TO GAME CONSTRUCTOR
+    const game = new Game(canvas, turnIndicator, statusDiv);
     const renderer = new Renderer(canvas);
 
     let selectedPiece = null;
