@@ -93,10 +93,17 @@ export class Game {
         const height = baseSide * (0.7 + Math.random() * 0.6);
         const angle = Math.random() * Math.PI * 2;
 
+        // === FIX: Buffer zone to prevent edge-blocking ===
+        const minEdgeBuffer = tigerDiameter * 1.5;
+        const minCenterBuffer = tigerDiameter;
+        
+        const maxSpawnRadius = Systems.CLEARING_RADIUS - minEdgeBuffer;
+        const minSpawnRadius = Math.min(minCenterBuffer, maxSpawnRadius);
+
         let attempts = 0;
         let center;
         do {
-            const r = Math.random() * Systems.CLEARING_RADIUS * 0.8;
+            const r = minSpawnRadius + Math.random() * (maxSpawnRadius - minSpawnRadius);
             const theta = Math.random() * Math.PI * 2;
             center = new Vector2(
                 this.center.x + r * Math.cos(theta),
@@ -204,7 +211,7 @@ export class Game {
                         this.hunters[i].radius = h.stats.diameter ? h.stats.diameter / 2 : 15;
                         this.hunters[i].borderlandsTolerance = h.stats.borderlandsTolerance || 3;
                         this.hunters[i].canMoveAfterRescue = h.stats.canMoveAfterRescue || false;
-                        this.hunters[i].canMoveAfterBeingRescued = h.stats.canMoveAfterBeingRescued || false;
+                        this.hunters[i].canMoveAfterBeingRescued = h.canMoveAfterBeingRescued || false;
                         this.hunters[i].hunterType = h.stats.hunterType || 'standard';
                     }
                 }
@@ -302,14 +309,12 @@ export class Game {
         }
     }
     
-    // === FIX #1: Check for compulsory pounce at turn start ===
     checkCompulsoryPounce() {
         const pounceRange = this.tiger.getTigerRange();
         const targets = Systems.getHuntersInPounceRange(this.tiger.pos, this.hunters, this.center, pounceRange);
         
         if (targets.length === 0) return null;
         
-        // Handle equidistant case
         const equidistant = Systems.getEquidistantHunters(this.tiger.pos, this.hunters, this.center, pounceRange);
         if (equidistant.length > 1) {
             return this.tigerAIEnabled ? 
@@ -317,11 +322,10 @@ export class Game {
                 null;
         }
         
-        return targets[0]; // Nearest single target
+        return targets[0];
     }
     
     executeTigerTurn(targetPos) {
-        // === FIX #1: Compulsory pounce check - if any hunter in range, MUST pounce ===
         const compulsoryPounceTarget = this.checkCompulsoryPounce();
         if (compulsoryPounceTarget) {
             console.log("=== COMPULSORY POUNCE TRIGGERED ===");
@@ -332,13 +336,12 @@ export class Game {
                 this.tiger.updateAnimation(this.tiger.animationEnd);
                 this.processPounceChain(compulsoryPounceTarget);
             }, this.tiger.animationDuration);
-            return; // Skip normal movement logic entirely
+            return;
         }
         
-        // === Original movement logic (only runs if no compulsory pounce) ===
         console.log("=== TIGER TURN START (no compulsory pounce) ===");
         const actualMoveDist = this.tiger.pos.distanceTo(targetPos);
-        const maxAllowedRange = this.tiger.getTigerRange();
+        const maxAllowedRange = this.tiger.getMoveRange();
         if (actualMoveDist > maxAllowedRange + 0.01) {
             const dir = targetPos.sub(this.tiger.pos);
             targetPos = this.tiger.pos.add(dir.normalize().mult(maxAllowedRange));
@@ -378,14 +381,12 @@ export class Game {
         }, this.tiger.animationDuration);
     }
     
-    // === FIX #2: Remove artificial delay from equidistant choice ===
     processEquidistantChoice(hunters) {
         console.log("Multiple equidistant hunters found:", hunters.length);
         this.equidistantChoice = hunters;
         this.statusDiv.textContent = "Tiger AI: Choosing target...";
         this.updateUI();
         
-        // Choose instantly - no delay
         const chosen = hunters[Math.floor(Math.random() * hunters.length)];
         console.log("AI chose hunter:", this.hunters.indexOf(chosen));
         this.equidistantChoice = null;
