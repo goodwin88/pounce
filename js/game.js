@@ -8,7 +8,15 @@ export class Game {
         this.turnIndicator = turnIndicator;
         this.statusDiv = statusDiv;
         this.reset();
-        this.tigerAIEnabled = true; // Set to false for 2-player mode
+        this.tigerAIEnabled = true;
+        
+        // NEW: Statistics tracking
+        this.stats = {
+            totalMoves: 0,
+            pounceChains: [],
+            campingRemovals: 0,
+            triangleForms: 0
+        };
     }
     
     reset() {
@@ -36,6 +44,14 @@ export class Game {
         this.animationQueue = [];
         this.processingAction = false;
         this.aiThinking = false;
+        
+        // Reset stats
+        this.stats = {
+            totalMoves: 0,
+            pounceChains: [],
+            campingRemovals: 0,
+            triangleForms: 0
+        };
     }
     
     getAllPieces() {
@@ -59,7 +75,59 @@ export class Game {
         } else if (this.aiThinking) {
             this.turnIndicator.textContent = 'Tiger Thinking...';
         } else {
-            this.turnIndicator.textContent = `${this.turn === 'TIGER' ? 'Tiger' : 'Hunters'}'s Turn`;
+            const turnText = `${this.turn === 'TIGER' ? 'Tiger' : 'Hunters'}'s Turn`;
+            const movesLeft = this.turn === 'HUNTERS' 
+                ? ` (${this.hunters.filter(h => !h.incapacitated && !h.isRemoved && !h.hasMoved).length} of ${this.hunters.filter(h => !h.incapacitated && !h.isRemoved).length} Hunters available)` 
+                : '';
+            this.turnIndicator.textContent = turnText + movesLeft;
+        }
+    }
+    
+    // NEW: Save game state
+    getState() {
+        return JSON.stringify({
+            tiger: { pos: this.tiger.pos, incapacitated: this.tiger.incapacitated },
+            hunters: this.hunters.map(h => ({
+                pos: h.pos,
+                incapacitated: h.incapacitated,
+                isRemoved: h.isRemoved,
+                borderlandsTurns: h.borderlandsTurns
+            })),
+            turn: this.turn,
+            moveHistory: this.moveHistory,
+            stats: this.stats
+        });
+    }
+    
+    // NEW: Load game state
+    loadState(stateString) {
+        try {
+            const state = JSON.parse(stateString);
+            
+            // Restore tiger
+            this.tiger.pos = new Vector2(state.tiger.pos.x, state.tiger.pos.y);
+            this.tiger.incapacitated = state.tiger.incapacitated;
+            
+            // Restore hunters
+            state.hunters.forEach((h, i) => {
+                if (this.hunters[i]) {
+                    this.hunters[i].pos = new Vector2(h.pos.x, h.pos.y);
+                    this.hunters[i].incapacitated = h.incapacitated;
+                    this.hunters[i].isRemoved = h.isRemoved;
+                    this.hunters[i].borderlandsTurns = h.borderlandsTurns || 0;
+                }
+            });
+            
+            this.turn = state.turn;
+            this.moveHistory = state.moveHistory || [];
+            this.stats = state.stats || this.stats;
+            this.huntersMoved.clear();
+            
+            this.updateUI();
+            return true;
+        } catch (e) {
+            console.error("Failed to load game state:", e);
+            return false;
         }
     }
     
@@ -83,24 +151,29 @@ export class Game {
     }
     
     movePiece(piece, targetPos) {
-        console.log(`movePiece called for ${piece.isTiger ? 'TIGER' : 'HUNTER'}, dist: ${piece.pos.distanceTo(targetPos).toFixed(2)}px`);
-        if (this.winner || this.isAnimating()) {
-            console.log("movePiece blocked: winner or animating");
+        // NEW: Input validation
+        if (!(targetPos instanceof Vector2) || isNaN(targetPos.x) || isNaN(targetPos.y)) {
+            console.error("Invalid target position:", targetPos);
             return;
         }
         
-        let dist = piece.pos.distanceTo(targetPos);
+        // NEW: Race condition protection
+        if (this.processingAction) {
+            console.log("Move blocked: already processing");
+            return;
+        }
+        
+        const dist = piece.pos.distanceTo(targetPos);
+        console.log(`movePiece: ${piece.isTiger ? 'TIGER' : 'HUNTER'} moving ${dist.toFixed(2)}px`);
         
         if (piece.isTiger) {
-            // CRITICAL FIX: Clamp distance instead of blocking to prevent stalling
-            if (dist > Systems.HAND_SPAN + 0.01) { // Allow tiny epsilon
+            // CRITICAL FIX: Clamp distance instead of blocking
+            if (dist > Systems.HAND_SPAN + 0.01) {
                 console.log(`Tiger move exceeded ${Systems.HAND_SPAN}px, clamping to max range`);
                 const dir = targetPos.sub(piece.pos);
                 targetPos = piece.pos.add(dir.normalize().mult(Systems.HAND_SPAN));
-                dist = Systems.HAND_SPAN;
             }
             
-            // Clamp to Clearing boundary
             const maxCenterDist = Systems.CLEARING_RADIUS - piece.radius;
             if (targetPos.distanceTo(this.center) > maxCenterDist) {
                 const angle = Math.atan2(targetPos.y - this.center.y, targetPos.x - this.center.x);
@@ -110,16 +183,16 @@ export class Game {
                 );
             }
             
-            console.log("Executing Tiger turn");
+            this.stats.totalMoves++;
             this.executeTigerTurn(targetPos);
             
         } else {
-            if (dist > Systems.HAND_SPAN) return; // Hunters still must click within range
+            if (dist > Systems.HAND_SPAN) return;
             
-            // Clamp to borderlands boundary
             const maxDist = Systems.CLEARING_RADIUS + Systems.BORDERLANDS_WIDTH;
             if (targetPos.distanceTo(this.center) > maxDist) return;
             
+            this.stats.totalMoves++;
             this.executeHunterTurn(piece, targetPos);
         }
     }
@@ -167,6 +240,7 @@ export class Game {
     processPounceChain(initialHunter) {
         console.log("=== Starting Pounce Chain ===");
         initialHunter.incapacitated = true;
+        this.stats.pounceChains.push({ huntersPounced: 1 });
         
         if (Systems.checkTigerVictory(this.hunters)) {
             console.log("TIGER VICTORY!");
@@ -195,6 +269,7 @@ export class Game {
         const target = targets[0];
         console.log("Pouncing hunter at:", target.pos);
         target.incapacitated = true;
+        this.stats.pounceChains[this.stats.pounceChains.length - 1].huntersPounced++;
         
         this.tiger.startAnimation(target.pos);
         
@@ -238,7 +313,6 @@ export class Game {
                 console.log(`Rescued hunter added. huntersMoved.size: ${this.huntersMoved.size}`);
             }
             
-            // Recalculate after rescue
             const totalMovable = this.hunters.filter(h => !h.incapacitated && !h.isRemoved).length;
             console.log(`Total movable hunters: ${totalMovable}, huntersMoved.size: ${this.huntersMoved.size}`);
             
@@ -254,7 +328,6 @@ export class Game {
                 this.enforceCampingPenalty();
                 this.updateUI();
                 
-                // Trigger AI after Hunter turn ends
                 if (this.tigerAIEnabled && !this.winner) {
                     console.log("Scheduling Tiger AI in 500ms...");
                     setTimeout(() => {
@@ -272,6 +345,7 @@ export class Game {
             if (victory.won) {
                 this.winner = 'HUNTERS';
                 this.winningHunters = victory.hunters;
+                this.stats.triangleForms++;
                 this.updateUI();
             }
             
@@ -301,7 +375,6 @@ export class Game {
                 this.updateUI();
             } else {
                 console.log("Tiger AI: No valid move found?!");
-                // CRITICAL: Don't stall - pass turn back to Hunters
                 this.turn = 'HUNTERS';
                 this.huntersMoved.clear();
                 this.updateUI();
@@ -347,32 +420,28 @@ export class Game {
         return possibleTargets[0]?.pos || null;
     }
     
+    // IMPROVED: Use temporary objects instead of mutating state
     simulatePounceChain(targetPos) {
-        const originalTigerPos = this.tiger.pos.clone();
-        const savedHunters = this.hunters.map(h => ({
-            pos: h.pos.clone(),
-            incapacitated: h.incapacitated
-        }));
+        const tempTiger = new Piece(this.tiger.pos.clone(), this.tiger.color, true);
+        const tempHunters = this.hunters.map(h => {
+            const temp = new Piece(h.pos.clone(), h.color, false);
+            temp.incapacitated = h.incapacitated;
+            temp.isRemoved = h.isRemoved;
+            return temp;
+        });
         
-        this.tiger.pos = targetPos.clone();
-        const landedHunter = Systems.getLandedHunter(this.tiger.pos, this.hunters, this.tiger.radius);
+        tempTiger.pos = targetPos.clone();
+        const landedHunter = Systems.getLandedHunter(tempTiger.pos, tempHunters, tempTiger.radius);
         
-        if (!landedHunter) {
-            this.tiger.pos = originalTigerPos;
-            savedHunters.forEach((h, i) => {
-                this.hunters[i].pos = h.pos;
-                this.hunters[i].incapacitated = h.incapacitated;
-            });
-            return 0;
-        }
+        if (!landedHunter) return 0;
         
         let chainCount = 1;
         let currentPos = landedHunter.pos;
         landedHunter.incapacitated = true;
         
         while (true) {
-            const targets = Systems.getHuntersInPounceRange(currentPos, this.hunters, this.center, Systems.HAND_SPAN);
-            const available = targets.filter(h => !h.incapacitated);
+            const targets = Systems.getHuntersInPounceRange(currentPos, tempHunters, this.center, Systems.HAND_SPAN);
+            const available = targets.filter(h => !h.incapacitated && !h.isRemoved);
             if (!available.length) break;
             
             const nextTarget = available[0];
@@ -380,12 +449,6 @@ export class Game {
             chainCount++;
             currentPos = nextTarget.pos;
         }
-        
-        this.tiger.pos = originalTigerPos;
-        savedHunters.forEach((h, i) => {
-            this.hunters[i].pos = h.pos;
-            this.hunters[i].incapacitated = h.incapacitated;
-        });
         
         return chainCount;
     }
@@ -397,30 +460,54 @@ export class Game {
             inBorderlands: Systems.isInBorderlands(h.pos, this.center)
         }));
         this.moveHistory.push(positions);
-        if (this.moveHistory.length > 2) this.moveHistory.shift();
+        // CRITICAL: Keep 3 turns for new camping penalty logic
+        if (this.moveHistory.length > 3) this.moveHistory.shift();
     }
     
+    // IMPROVED: 3-turn camping penalty instead of 2
     enforceCampingPenalty() {
-        if (this.moveHistory.length < 2) return;
+        if (this.moveHistory.length < 3) return;
         
         const anyInClearing = this.hunters.some(h => 
             !h.incapacitated && !h.isRemoved && Systems.isInClearing(h.pos, this.center)
         );
         if (!anyInClearing) return;
         
-        const [turn1, turn2] = this.moveHistory.slice(-2);
+        const [turn1, turn2, turn3] = this.moveHistory.slice(-3);
         
         for (let hunter of this.hunters) {
             if (hunter.incapacitated || hunter.isRemoved) continue;
             
             const posInTurn1 = turn1.find(p => p.hunter === hunter);
             const posInTurn2 = turn2.find(p => p.hunter === hunter);
+            const posInTurn3 = turn3.find(p => p.hunter === hunter);
             
-            if (posInTurn1?.inBorderlands && posInTurn2?.inBorderlands) {
-                console.log(`Hunter removed for camping!`);
+            // Must be in Borderlands for 3 CONSECUTIVE turns
+            if (posInTurn1?.inBorderlands && posInTurn2?.inBorderlands && posInTurn3?.inBorderlands) {
+                console.log(`Hunter removed for camping 3 turns!`);
                 hunter.isRemoved = true;
+                this.stats.campingRemovals++;
             }
         }
+    }
+    
+    // Get camping warning status for a hunter
+    getCampingWarning(hunter) {
+        if (this.moveHistory.length < 2 || hunter.incapacitated || hunter.isRemoved) return 0;
+        
+        const anyInClearing = this.hunters.some(h => 
+            !h.incapacitated && !h.isRemoved && Systems.isInClearing(h.pos, this.center)
+        );
+        if (!anyInClearing) return 0;
+        
+        const [turn1, turn2] = this.moveHistory.slice(-2);
+        const inTurn1 = turn1.find(p => p.hunter === hunter)?.inBorderlands;
+        const inTurn2 = turn2.find(p => p.hunter === hunter)?.inBorderlands;
+        
+        if (inTurn1 && inTurn2) return 2; // 2 turns, will be removed next
+        if (inTurn2 && !inTurn1) return 1; // 1 turn so far
+        
+        return 0;
     }
     
     update(currentTime) {
