@@ -201,7 +201,6 @@ export class Piece {
     }
 }
 
-// NEW: Terrain obstacle class
 export class Terrain {
     constructor(center, width, height, angle) {
         this.center = center;
@@ -216,5 +215,41 @@ export class Terrain {
         const localX = (point.x - this.center.x) * cos - (point.y - this.center.y) * sin;
         const localY = (point.x - this.center.x) * sin + (point.y - this.center.y) * cos;
         return Math.abs(localX) <= this.width / 2 && Math.abs(localY) <= this.height / 2;
+    }
+    
+    // NEW: Check if line segment intersects this terrain
+    lineIntersects(start, end) {
+        const corners = [
+            new Vector2(this.center.x - this.width/2, this.center.y - this.height/2),
+            new Vector2(this.center.x + this.width/2, this.center.y - this.height/2),
+            new Vector2(this.center.x + this.width/2, this.center.y + this.height/2),
+            new Vector2(this.center.x - this.width/2, this.center.y + this.height/2)
+        ];
+        
+        // Rotate corners to match terrain angle
+        const cos = Math.cos(this.angle);
+        const sin = Math.sin(this.angle);
+        const rotatedCorners = corners.map(c => new Vector2(
+            this.center.x + (c.x - this.center.x) * cos - (c.y - this.center.y) * sin,
+            this.center.y + (c.x - this.center.x) * sin + (c.y - this.center.y) * cos
+        ));
+        
+        // Check each edge of rectangle
+        for (let i = 0; i < 4; i++) {
+            const p1 = rotatedCorners[i];
+            const p2 = rotatedCorners[(i + 1) % 4];
+            if (this.lineSegmentsIntersect(start, end, p1, p2)) return true;
+        }
+        return false;
+    }
+    
+    lineSegmentsIntersect(p1, p2, q1, q2) {
+        const det = (p2.x - p1.x) * (q2.y - q1.y) - (q2.x - q1.x) * (p2.y - p1.y);
+        if (Math.abs(det) < 0.001) return false;
+        
+        const lambda = ((q2.y - q1.y) * (q2.x - p1.x) + (q1.x - q2.x) * (q2.y - p1.y)) / det;
+        const gamma = ((p1.y - p2.y) * (q2.x - p1.x) + (p2.x - p1.x) * (q2.y - p1.y)) / det;
+        
+        return (0 < lambda && lambda < 1) && (0 < gamma && gamma < 1);
     }
 }
