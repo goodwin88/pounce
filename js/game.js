@@ -83,20 +83,24 @@ export class Game {
     }
     
     movePiece(piece, targetPos) {
-        console.log(`movePiece called for ${piece.isTiger ? 'TIGER' : 'HUNTER'}, isAnimating: ${this.isAnimating()}`);
+        console.log(`movePiece called for ${piece.isTiger ? 'TIGER' : 'HUNTER'}, dist: ${piece.pos.distanceTo(targetPos).toFixed(2)}px`);
         if (this.winner || this.isAnimating()) {
             console.log("movePiece blocked: winner or animating");
             return;
         }
         
-        const dist = piece.pos.distanceTo(targetPos);
+        let dist = piece.pos.distanceTo(targetPos);
         
         if (piece.isTiger) {
-            if (dist > Systems.HAND_SPAN) {
-                console.log("Tiger move blocked: distance too far");
-                return;
+            // CRITICAL FIX: Clamp distance instead of blocking to prevent stalling
+            if (dist > Systems.HAND_SPAN + 0.01) { // Allow tiny epsilon
+                console.log(`Tiger move exceeded ${Systems.HAND_SPAN}px, clamping to max range`);
+                const dir = targetPos.sub(piece.pos);
+                targetPos = piece.pos.add(dir.normalize().mult(Systems.HAND_SPAN));
+                dist = Systems.HAND_SPAN;
             }
             
+            // Clamp to Clearing boundary
             const maxCenterDist = Systems.CLEARING_RADIUS - piece.radius;
             if (targetPos.distanceTo(this.center) > maxCenterDist) {
                 const angle = Math.atan2(targetPos.y - this.center.y, targetPos.x - this.center.x);
@@ -110,8 +114,9 @@ export class Game {
             this.executeTigerTurn(targetPos);
             
         } else {
-            if (dist > Systems.HAND_SPAN) return;
+            if (dist > Systems.HAND_SPAN) return; // Hunters still must click within range
             
+            // Clamp to borderlands boundary
             const maxDist = Systems.CLEARING_RADIUS + Systems.BORDERLANDS_WIDTH;
             if (targetPos.distanceTo(this.center) > maxDist) return;
             
@@ -154,6 +159,7 @@ export class Game {
                 this.turn = 'HUNTERS';
                 this.huntersMoved.clear();
                 this.processingAction = false;
+                this.updateUI();
             }
         }, this.tiger.animationDuration);
     }
@@ -232,7 +238,7 @@ export class Game {
                 console.log(`Rescued hunter added. huntersMoved.size: ${this.huntersMoved.size}`);
             }
             
-            // CRITICAL FIX: Recalculate after rescue
+            // Recalculate after rescue
             const totalMovable = this.hunters.filter(h => !h.incapacitated && !h.isRemoved).length;
             console.log(`Total movable hunters: ${totalMovable}, huntersMoved.size: ${this.huntersMoved.size}`);
             
@@ -248,7 +254,7 @@ export class Game {
                 this.enforceCampingPenalty();
                 this.updateUI();
                 
-                // CRITICAL: Trigger AI after Hunter turn ends
+                // Trigger AI after Hunter turn ends
                 if (this.tigerAIEnabled && !this.winner) {
                     console.log("Scheduling Tiger AI in 500ms...");
                     setTimeout(() => {
@@ -287,7 +293,7 @@ export class Game {
         
         setTimeout(() => {
             const bestMove = this.calculateBestTigerMove();
-            this.aiThinking = false; // CRITICAL: Stop thinking before moving
+            this.aiThinking = false;
             
             if (bestMove) {
                 console.log("Tiger AI moving to:", bestMove);
@@ -295,6 +301,7 @@ export class Game {
                 this.updateUI();
             } else {
                 console.log("Tiger AI: No valid move found?!");
+                // CRITICAL: Don't stall - pass turn back to Hunters
                 this.turn = 'HUNTERS';
                 this.huntersMoved.clear();
                 this.updateUI();
@@ -312,15 +319,26 @@ export class Game {
                 this.tiger.pos.y + Math.sin(angle) * Systems.HAND_SPAN
             );
             
+            // Clamp to Clearing boundary
             const maxCenterDist = Systems.CLEARING_RADIUS - this.tiger.radius;
-            if (targetPos.distanceTo(this.center) > maxCenterDist) {
+            let finalPos = targetPos.clone();
+            let currentDistFromCenter = targetPos.distanceTo(this.center);
+            if (currentDistFromCenter > maxCenterDist) {
                 const clampAngle = Math.atan2(targetPos.y - this.center.y, targetPos.x - this.center.x);
-                targetPos.x = this.center.x + Math.cos(clampAngle) * maxCenterDist;
-                targetPos.y = this.center.y + Math.sin(clampAngle) * maxCenterDist;
+                finalPos = new Vector2(
+                    this.center.x + Math.cos(clampAngle) * maxCenterDist,
+                    this.center.y + Math.sin(clampAngle) * maxCenterDist
+                );
             }
             
-            const chainScore = this.simulatePounceChain(targetPos);
-            possibleTargets.push({ pos: targetPos, score: chainScore });
+            // Ensure we don't exceed HAND_SPAN after boundary clamping
+            const dir = finalPos.sub(this.tiger.pos);
+            const clampedDist = Math.min(dir.distanceTo(new Vector2(0, 0)), Systems.HAND_SPAN);
+            const normalized = clampedDist > 0 ? dir.mult(1 / dir.distanceTo(new Vector2(0, 0))) : new Vector2(0, 0);
+            finalPos = this.tiger.pos.add(normalized.mult(clampedDist));
+            
+            const chainScore = this.simulatePounceChain(finalPos);
+            possibleTargets.push({ pos: finalPos, score: chainScore });
         }
         
         possibleTargets.sort((a, b) => b.score - a.score);
