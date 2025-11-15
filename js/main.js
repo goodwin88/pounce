@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const resetBtn = document.getElementById('reset-btn');
     const saveBtn = document.getElementById('save-btn');
     const loadBtn = document.getElementById('load-btn');
+    const difficultySelect = document.getElementById('difficulty');
     const statsDiv = document.getElementById('stats-display');
 
     if (!canvas) {
@@ -17,15 +18,25 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    const game = new Game(canvas, turnIndicator, statusDiv);
+    const game = new Game(canvas, turnIndicator, statusDiv, parseInt(difficultySelect.value));
     const renderer = new Renderer(canvas);
 
     let selectedPiece = null;
     let dragPreview = null;
     let ghostPreview = null;
     let lastTime = performance.now();
-    
     let keyboardSelectedHunterIndex = -1;
+
+    // Difficulty selector
+    difficultySelect.addEventListener('change', (e) => {
+        if (game.isAnimating()) return;
+        
+        const newDifficulty = parseInt(e.target.value);
+        game.difficulty = newDifficulty;
+        game.reset();
+        statusDiv.textContent = `Difficulty set to ${Systems.DIFFICULTY_LEVELS[newDifficulty].name}`;
+        game.updateUI();
+    });
 
     // Touch support
     canvas.addEventListener('touchstart', (e) => {
@@ -96,7 +107,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
                 const newPos = selectedPiece.pos.add(new Vector2(dx, dy));
                 const dist = selectedPiece.pos.distanceTo(newPos);
-                const clampedDist = Math.min(dist, Systems.HAND_SPAN);
+                const moveRange = selectedPiece.getMoveRange(); // NEW: Use specialized range
+                const clampedDist = Math.min(dist, moveRange);
                 const normalized = dist > 0 ? newPos.sub(selectedPiece.pos).mult(1 / dist).mult(clampedDist) : new Vector2(0, 0);
                 const targetPos = selectedPiece.pos.add(normalized);
                 
@@ -146,8 +158,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!selectedPiece.isTiger) {
             const dir = hoverPos.sub(selectedPiece.pos);
             const dist = dir.distanceTo(new Vector2(0, 0));
+            const moveRange = selectedPiece.getMoveRange(); // NEW: Use specialized range
             
-            const clampedDist = Math.min(dist, Systems.HAND_SPAN);
+            const clampedDist = Math.min(dist, moveRange);
             const normalized = dist > 0 ? dir.mult(1 / dist).mult(clampedDist) : new Vector2(0, 0);
             const targetPos = selectedPiece.pos.add(normalized);
             
@@ -176,8 +189,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!selectedPiece.isTiger) {
             const dir = rawTargetPos.sub(selectedPiece.pos);
             const dist = dir.distanceTo(new Vector2(0, 0));
+            const moveRange = selectedPiece.getMoveRange(); // NEW: Use specialized range
             
-            const clampedDist = Math.min(dist, Systems.HAND_SPAN);
+            const clampedDist = Math.min(dist, moveRange);
             const normalized = dist > 0 ? dir.mult(1 / dist).mult(clampedDist) : new Vector2(0, 0);
             targetPos = selectedPiece.pos.add(normalized);
             
@@ -205,7 +219,9 @@ document.addEventListener('DOMContentLoaded', () => {
     resetBtn.addEventListener('click', () => {
         if (game.isAnimating()) return;
         
+        const currentDifficulty = game.difficulty; // Preserve difficulty
         game.reset();
+        game.difficulty = currentDifficulty; // Re-apply
         selectedPiece = null;
         dragPreview = null;
         ghostPreview = null;
@@ -221,19 +237,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Save game
     saveBtn.addEventListener('click', () => {
         const state = game.getState();
         localStorage.setItem('pounceSaveGame', state);
+        localStorage.setItem('pounceDifficulty', game.difficulty.toString()); // Save difficulty separately
         statusDiv.textContent = "Game saved!";
         setTimeout(() => game.updateUI(), 2000);
     });
 
-    // Load game
     loadBtn.addEventListener('click', () => {
         const state = localStorage.getItem('pounceSaveGame');
+        const savedDifficulty = localStorage.getItem('pounceDifficulty');
+        
         if (state) {
             if (game.loadState(state)) {
+                if (savedDifficulty) {
+                    game.difficulty = parseInt(savedDifficulty);
+                    difficultySelect.value = savedDifficulty;
+                }
                 statusDiv.textContent = "Game loaded!";
                 selectedPiece = null;
                 dragPreview = null;
@@ -256,8 +277,11 @@ document.addEventListener('DOMContentLoaded', () => {
             ? (s.pounceChains.reduce((a, c) => a + c.huntersPounced, 0) / s.pounceChains.length).toFixed(1)
             : 0;
             
+        const diffName = Systems.DIFFICULTY_LEVELS[game.difficulty].name;
+            
         statsDiv.innerHTML = `
             <strong>Statistics:</strong><br>
+            Difficulty: ${diffName}<br>
             Total Moves: ${s.totalMoves}<br>
             Pounce Chains: ${s.pounceChains.length}<br>
             Avg Chain: ${avgChain}<br>
@@ -272,7 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
         lastTime = currentTime;
         
         const isAnimating = game.update(currentTime);
-        if (isAnimating || game.aiThinking) {
+        if (isAnimating || game.aiThinking || game.equidistantChoice) {
             game.updateUI();
         }
 
@@ -288,7 +312,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         if (selectedPiece && !game.isAnimating()) {
-            renderer.drawRangeIndicator(selectedPiece.pos, Systems.HAND_SPAN);
+            const range = selectedPiece.getMoveRange(); // NEW: Use specialized range
+            renderer.drawRangeIndicator(selectedPiece.pos, range);
         }
         
         // FIX: Pass game instance to renderer
@@ -301,7 +326,8 @@ document.addEventListener('DOMContentLoaded', () => {
             tiger: game.tiger,
             turn: game.turn,
             stats: game.stats,
-            gameInstance: game // <-- ADD THIS
+            gameInstance: game,
+            equidistantChoice: game.equidistantChoice
         });
         
         if (selectedPiece && dragPreview && !game.isAnimating()) {
@@ -321,7 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     game.updateUI();
     statusDiv.textContent = "Game ready! Tiger is automated. Control the Hunters. (Tab to cycle, Arrows to move)";
-    console.log("Game initialized. AI Enabled:", game.tigerAIEnabled, "Starting turn:", game.turn);
+    console.log("Game initialized. AI Enabled:", game.tigerAIEnabled, "Starting turn:", game.turn, "Difficulty:", game.difficulty);
     
     if (game.tigerAIEnabled && game.turn === 'TIGER' && !game.winner) {
         setTimeout(() => {
