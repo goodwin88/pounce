@@ -62,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedPiece = null;
         dragPreview = null;
         canvas.style.cursor = 'pointer';
-        game.updateUI();
+        game.updateUI(); // Update UI immediately after move
     });
 
     resetBtn.addEventListener('click', () => {
@@ -72,9 +72,9 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedPiece = null;
         dragPreview = null;
         game.updateUI();
-        statusDiv.textContent = "Game reset! Click the RED TIGER to start.";
+        statusDiv.textContent = "Game reset! Tiger will move first.";
         
-        // Trigger AI if it's Tiger's turn after reset
+        // Trigger AI on reset if Tiger starts
         if (game.tigerAIEnabled && game.turn === 'TIGER' && !game.winner) {
             setTimeout(() => game.executeTigerAI(), 500);
         }
@@ -129,7 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
     game.updateUI();
     statusDiv.textContent = "Game ready! Tiger is automated. Control the Hunters.";
     
-    // CRITICAL: Trigger AI on first turn if Tiger starts
+    // Trigger AI on first turn
     if (game.tigerAIEnabled && game.turn === 'TIGER' && !game.winner) {
         setTimeout(() => game.executeTigerAI(), 500);
     }
