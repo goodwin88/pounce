@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveBtn = document.getElementById('save-btn');
     const loadBtn = document.getElementById('load-btn');
     const difficultySelect = document.getElementById('difficulty');
+    const tigerRangeSelect = document.getElementById('tigerRange');
     const statsDiv = document.getElementById('stats-display');
 
     if (!canvas) {
@@ -18,7 +19,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    const game = new Game(canvas, turnIndicator, statusDiv, parseInt(difficultySelect.value));
+    // NEW: Pass both difficulty and range multiplier
+    const game = new Game(
+        canvas, 
+        turnIndicator, 
+        statusDiv, 
+        parseInt(difficultySelect.value), 
+        parseFloat(tigerRangeSelect.value)
+    );
     const renderer = new Renderer(canvas);
 
     let selectedPiece = null;
@@ -35,6 +43,18 @@ document.addEventListener('DOMContentLoaded', () => {
         game.difficulty = newDifficulty;
         game.reset();
         statusDiv.textContent = `Difficulty set to ${Systems.DIFFICULTY_LEVELS[newDifficulty].name}`;
+        game.updateUI();
+    });
+
+    // NEW: Tiger range selector
+    tigerRangeSelect.addEventListener('change', (e) => {
+        if (game.isAnimating()) return;
+        
+        const newRange = parseFloat(e.target.value);
+        game.tigerRangeMultiplier = newRange;
+        game.reset();
+        const rangeInfo = Systems.TIGER_RANGE_MULTIPLIERS[newRange];
+        statusDiv.textContent = `Tiger range set to ${rangeInfo.name} (${newRange}×)`;
         game.updateUI();
     });
 
@@ -107,7 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
                 const newPos = selectedPiece.pos.add(new Vector2(dx, dy));
                 const dist = selectedPiece.pos.distanceTo(newPos);
-                const moveRange = selectedPiece.getMoveRange(); // NEW: Use specialized range
+                const moveRange = selectedPiece.getMoveRange();
                 const clampedDist = Math.min(dist, moveRange);
                 const normalized = dist > 0 ? newPos.sub(selectedPiece.pos).mult(1 / dist).mult(clampedDist) : new Vector2(0, 0);
                 const targetPos = selectedPiece.pos.add(normalized);
@@ -137,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
             keyboardSelectedHunterIndex = -1;
             canvas.style.cursor = 'grabbing';
             const movesLeft = game.turn === 'HUNTERS' ? ` (${5 - game.huntersMoved.size} moves left)` : '';
-            statusDiv.textContent = `${piece.isTiger ? 'TIGER' : 'HUNTER'} selected${movesLeft}. Click within yellow ring.`;
+            statusDiv.textContent = `${piece.isTiger ? 'TIGER' : 'HUNTER'} selected${movesLeft}. Click within ring.`;
         }
     });
 
@@ -158,7 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!selectedPiece.isTiger) {
             const dir = hoverPos.sub(selectedPiece.pos);
             const dist = dir.distanceTo(new Vector2(0, 0));
-            const moveRange = selectedPiece.getMoveRange(); // NEW: Use specialized range
+            const moveRange = selectedPiece.getMoveRange();
             
             const clampedDist = Math.min(dist, moveRange);
             const normalized = dist > 0 ? dir.mult(1 / dist).mult(clampedDist) : new Vector2(0, 0);
@@ -189,7 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!selectedPiece.isTiger) {
             const dir = rawTargetPos.sub(selectedPiece.pos);
             const dist = dir.distanceTo(new Vector2(0, 0));
-            const moveRange = selectedPiece.getMoveRange(); // NEW: Use specialized range
+            const moveRange = selectedPiece.getMoveRange();
             
             const clampedDist = Math.min(dist, moveRange);
             const normalized = dist > 0 ? dir.mult(1 / dist).mult(clampedDist) : new Vector2(0, 0);
@@ -219,9 +239,12 @@ document.addEventListener('DOMContentLoaded', () => {
     resetBtn.addEventListener('click', () => {
         if (game.isAnimating()) return;
         
-        const currentDifficulty = game.difficulty; // Preserve difficulty
+        // Preserve both settings
+        const currentDifficulty = game.difficulty;
+        const currentRange = game.tigerRangeMultiplier;
         game.reset();
-        game.difficulty = currentDifficulty; // Re-apply
+        game.difficulty = currentDifficulty;
+        game.tigerRangeMultiplier = currentRange;
         selectedPiece = null;
         dragPreview = null;
         ghostPreview = null;
@@ -240,7 +263,8 @@ document.addEventListener('DOMContentLoaded', () => {
     saveBtn.addEventListener('click', () => {
         const state = game.getState();
         localStorage.setItem('pounceSaveGame', state);
-        localStorage.setItem('pounceDifficulty', game.difficulty.toString()); // Save difficulty separately
+        localStorage.setItem('pounceDifficulty', game.difficulty.toString());
+        localStorage.setItem('pounceRange', game.tigerRangeMultiplier.toString()); // NEW
         statusDiv.textContent = "Game saved!";
         setTimeout(() => game.updateUI(), 2000);
     });
@@ -248,12 +272,17 @@ document.addEventListener('DOMContentLoaded', () => {
     loadBtn.addEventListener('click', () => {
         const state = localStorage.getItem('pounceSaveGame');
         const savedDifficulty = localStorage.getItem('pounceDifficulty');
+        const savedRange = localStorage.getItem('pounceRange');
         
         if (state) {
             if (game.loadState(state)) {
                 if (savedDifficulty) {
                     game.difficulty = parseInt(savedDifficulty);
                     difficultySelect.value = savedDifficulty;
+                }
+                if (savedRange) {
+                    game.tigerRangeMultiplier = parseFloat(savedRange);
+                    tigerRangeSelect.value = savedRange;
                 }
                 statusDiv.textContent = "Game loaded!";
                 selectedPiece = null;
@@ -278,10 +307,12 @@ document.addEventListener('DOMContentLoaded', () => {
             : 0;
             
         const diffName = Systems.DIFFICULTY_LEVELS[game.difficulty].name;
+        const rangeName = Systems.TIGER_RANGE_MULTIPLIERS[game.tigerRangeMultiplier].name;
             
         statsDiv.innerHTML = `
             <strong>Statistics:</strong><br>
             Difficulty: ${diffName}<br>
+            Tiger Range: ${rangeName}<br>
             Total Moves: ${s.totalMoves}<br>
             Pounce Chains: ${s.pounceChains.length}<br>
             Avg Chain: ${avgChain}<br>
@@ -311,12 +342,12 @@ document.addEventListener('DOMContentLoaded', () => {
             renderer.drawGhostPreview(ghostPreview.piece, ghostPreview.position);
         }
         
+        // Use dynamic range for range indicator
         if (selectedPiece && !game.isAnimating()) {
-            const range = selectedPiece.getMoveRange(); // NEW: Use specialized range
+            const range = selectedPiece.getMoveRange();
             renderer.drawRangeIndicator(selectedPiece.pos, range);
         }
         
-        // FIX: Pass game instance to renderer
         renderer.draw(game.getAllPieces(), {
             winner: game.winner,
             winningHunters: game.winningHunters,
@@ -346,8 +377,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     game.updateUI();
-    statusDiv.textContent = "Game ready! Tiger is automated. Control the Hunters. (Tab to cycle, Arrows to move)";
-    console.log("Game initialized. AI Enabled:", game.tigerAIEnabled, "Starting turn:", game.turn, "Difficulty:", game.difficulty);
+    statusDiv.textContent = "Game ready! Size=60%, Range=Standard. Control the Hunters. (Tab to cycle, Arrows to move)";
+    console.log("Game initialized. AI Enabled:", game.tigerAIEnabled, "Starting turn:", game.turn, "Difficulty:", game.difficulty, "Range:", game.tigerRangeMultiplier);
     
     if (game.tigerAIEnabled && game.turn === 'TIGER' && !game.winner) {
         setTimeout(() => {
