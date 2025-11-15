@@ -314,27 +314,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function updateStatsDisplay() {
-        if (!statsDiv) return;
+    if (!statsDiv) return;
+    
+    const s = game.stats; // Fixed: added this line
+    const avgChain = s.pounceChains.length > 0 
+        ? (s.pounceChains.reduce((a, c) => a + c.huntersPounced, 0) / s.pounceChains.length).toFixed(1)
+        : 0;
         
-        const s = game.stats;
-        const avgChain = s.pounceChains.length > 0 
-            ? (s.pounceChains.reduce((a, c) => a + c.huntersPounced, 0) / s.pounceChains.length).toFixed(1)
-            : 0;
-            
-        const diffName = Systems.DIFFICULTY_LEVELS[game.difficulty].name;
-        const rangeName = Systems.TIGER_RANGE_MULTIPLIERS[game.tigerRangeMultiplier].name;
-            
-        statsDiv.innerHTML = `
-            <strong>Statistics:</strong><br>
-            Size: ${diffName}<br>
-            Reach: ${rangeName}<br>
-            Total Moves: ${s.totalMoves}<br>
-            Pounce Chains: ${s.pounceChains.length}<br>
-            Avg Chain: ${avgChain}<br>
-            Camping Removals: ${s.campingRemovals}<br>
-            Triangles Formed: ${s.triangleForms}
-        `;
-    }
+    const diffName = Systems.DIFFICULTY_LEVELS[game.difficulty].name;
+    const rangeName = Systems.TIGER_RANGE_MULTIPLIERS[game.tigerRangeMultiplier].name;
+        
+    statsDiv.innerHTML = `
+        <strong>Statistics:</strong><br>
+        Size: ${diffName}<br>
+        Reach: ${rangeName}<br>
+        Total Moves: ${s.totalMoves}<br>
+        Pounce Chains: ${s.pounceChains.length}<br>
+        Avg Chain: ${avgChain}<br>
+        Camping Removals: ${s.campingRemovals}<br>
+        Triangles Formed: ${s.triangleForms}
+    `;
+}
 
     function gameLoop() {
         const currentTime = performance.now();
