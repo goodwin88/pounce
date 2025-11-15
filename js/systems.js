@@ -47,6 +47,7 @@ export function getLandedHunter(tigerPos, hunters, tigerRadius) {
     );
 }
 
+// Original function (no LOS check)
 export function getHuntersInPounceRange(fromPos, hunters, center, range) {
     return hunters
         .filter(h => {
@@ -54,6 +55,24 @@ export function getHuntersInPounceRange(fromPos, hunters, center, range) {
             if (!isInClearing(h.pos, center)) return false;
             const dist = distance(fromPos, h.pos);
             return dist <= range;
+        })
+        .sort((a, b) => distance(fromPos, a.pos) - distance(fromPos, b.pos));
+}
+
+// NEW: LOS-aware version
+export function getHuntersInPounceRangeWithLOS(fromPos, hunters, center, range, terrainArray) {
+    if (!terrainArray || terrainArray.length === 0) {
+        return getHuntersInPounceRange(fromPos, hunters, center, range);
+    }
+    
+    return hunters
+        .filter(h => {
+            if (h.incapacitated || h.isRemoved) return false;
+            if (!isInClearing(h.pos, center)) return false;
+            const dist = distance(fromPos, h.pos);
+            if (dist > range) return false;
+            // Check line of sight
+            return isLineOfSightClear(fromPos, h.pos, terrainArray);
         })
         .sort((a, b) => distance(fromPos, a.pos) - distance(fromPos, b.pos));
 }
@@ -97,4 +116,14 @@ export function checkHunterVictory(tiger, hunters, center) {
 
 export function checkTigerVictory(hunters) {
     return hunters.every(h => h.incapacitated || h.isRemoved);
+}
+
+// NEW: Check if line of sight is clear between two points
+export function isLineOfSightClear(fromPos, toPos, terrainArray) {
+    if (!terrainArray || terrainArray.length === 0) return true;
+    
+    for (let terrain of terrainArray) {
+        if (terrain.lineIntersects(fromPos, toPos)) return false;
+    }
+    return true;
 }
