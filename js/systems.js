@@ -4,7 +4,6 @@ export const HAND_SPAN = 150;
 export const CLEARING_RADIUS = 300;
 export const BORDERLANDS_WIDTH = HAND_SPAN;
 
-// NEW: Difficulty scaling constants
 export const DIFFICULTY_LEVELS = {
     1: { name: '⭐ Beginner', multiplier: 0.2 },
     2: { name: '⭐⭐ Easy', multiplier: 0.4 },
@@ -13,7 +12,15 @@ export const DIFFICULTY_LEVELS = {
     5: { name: '⭐⭐⭐⭐⭐ Expert', multiplier: 1.0 }
 };
 
-// NEW: Hunter specialization constants
+// NEW: Tiger range multiplier constants
+export const TIGER_RANGE_MULTIPLIERS = {
+    0.5: { name: 'Short', multiplier: 0.5 },
+    0.7: { name: 'Compact', multiplier: 0.7 },
+    1.0: { name: 'Standard', multiplier: 1.0 },
+    1.3: { name: 'Long', multiplier: 1.3 },
+    1.5: { name: 'Extended', multiplier: 1.5 }
+};
+
 export const HUNTER_SPECIALS = {
     scout: { moveMultiplier: 1.5, symbol: 'S' },
     veteran: { moveMultiplier: 1.0, symbol: 'V', immuneToCamping: true },
@@ -53,11 +60,10 @@ export function getHuntersInPounceRange(fromPos, hunters, center, range) {
         .sort((a, b) => distance(fromPos, a.pos) - distance(fromPos, b.pos));
 }
 
-// NEW: Get equidistant hunters (within 1px tolerance)
-export function getEquidistantHunters(fromPos, hunters, range) {
+export function getEquidistantHunters(fromPos, hunters, center, range) {
     if (hunters.length === 0) return [];
     
-    const sorted = getHuntersInPounceRange(fromPos, hunters, fromPos, range);
+    const sorted = getHuntersInPounceRange(fromPos, hunters, center, range);
     if (sorted.length < 2) return [];
     
     const firstDist = distance(fromPos, sorted[0].pos);
