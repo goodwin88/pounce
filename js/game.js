@@ -6,7 +6,7 @@ export class Game {
         this.canvas = canvas;
         this.center = new Vector2(canvas.width / 2, canvas.height / 2);
         this.reset();
-        this.tigerAIEnabled = true; // Toggle AI on/off
+        this.tigerAIEnabled = true; // Set to false for 2-player mode
     }
     
     reset() {
@@ -188,13 +188,14 @@ export class Game {
             if (rescued) {
                 rescued.incapacitated = false;
                 rescued.borderlandsTurns = 0;
-                rescued.hasMoved = true; // Cannot move this turn
-                this.huntersMoved.add(rescued); // Add to prevent selection
+                rescued.hasMoved = true;
+                this.huntersMoved.add(rescued);
                 console.log("Hunter rescued! Cannot move this turn.");
             }
             
-            const activeHunters = this.hunters.filter(h => !h.incapacitated && !h.isRemoved);
-            if (this.huntersMoved.size === activeHunters.length) {
+            // CRITICAL FIX: Recalculate total movable hunters after rescue
+            const totalMovable = this.hunters.filter(h => !h.incapacitated && !h.isRemoved).length;
+            if (this.huntersMoved.size === totalMovable) {
                 this.recordTurnPositions();
                 this.turn = 'TIGER';
                 this.huntersMoved.clear();
@@ -203,12 +204,12 @@ export class Game {
                     h.moveOrder = null;
                 });
                 this.enforceCampingPenalty();
+                
                 // Trigger AI after Hunter turn ends
                 if (this.tigerAIEnabled && !this.winner) {
                     setTimeout(() => this.executeTigerAI(), 500);
                 }
             } else {
-                // If rescue happened, update UI immediately
                 if (rescued) {
                     this.updateUI();
                 }
@@ -224,7 +225,7 @@ export class Game {
         }, hunter.animationDuration);
     }
     
-    // NEW: Tiger AI
+    // Tiger AI
     executeTigerAI() {
         if (this.winner || this.turn !== 'TIGER' || !this.tigerAIEnabled) return;
         
@@ -239,19 +240,19 @@ export class Game {
             if (bestMove) {
                 console.log("Tiger AI moving to:", bestMove);
                 this.movePiece(this.tiger, bestMove);
+                this.updateUI();
             } else {
                 console.log("Tiger AI: No valid move found?!");
                 this.turn = 'HUNTERS';
                 this.huntersMoved.clear();
+                this.updateUI();
             }
-        }, 800); // "Thinking" delay
+        }, 800);
     }
     
-    // NEW: Calculate best Tiger move
     calculateBestTigerMove() {
         const possibleTargets = [];
         
-        // Sample grid of potential target positions within HAND_SPAN
         const samples = 12;
         for (let angle = 0; angle < Math.PI * 2; angle += (Math.PI * 2) / samples) {
             const targetPos = new Vector2(
@@ -259,7 +260,6 @@ export class Game {
                 this.tiger.pos.y + Math.sin(angle) * Systems.HAND_SPAN
             );
             
-            // Clamp to Clearing boundary
             const maxCenterDist = Systems.CLEARING_RADIUS - this.tiger.radius;
             if (targetPos.distanceTo(this.center) > maxCenterDist) {
                 const clampAngle = Math.atan2(targetPos.y - this.center.y, targetPos.x - this.center.x);
@@ -267,48 +267,35 @@ export class Game {
                 targetPos.y = this.center.y + Math.sin(clampAngle) * maxCenterDist;
             }
             
-            // Simulate chain length
             const chainScore = this.simulatePounceChain(targetPos);
-            
-            possibleTargets.push({
-                pos: targetPos,
-                score: chainScore
-            });
+            possibleTargets.push({ pos: targetPos, score: chainScore });
         }
         
-        // Sort by score (chain length), highest first
         possibleTargets.sort((a, b) => b.score - a.score);
-        
         console.log("Tiger AI evaluated", possibleTargets.length, "moves. Best score:", possibleTargets[0]?.score || 0);
         
         return possibleTargets[0]?.pos || null;
     }
     
-    // NEW: Simulate pounce chain to calculate score
     simulatePounceChain(targetPos) {
-        // Temporarily save real state
         const originalTigerPos = this.tiger.pos.clone();
         const savedHunters = this.hunters.map(h => ({
             pos: h.pos.clone(),
             incapacitated: h.incapacitated
         }));
         
-        // Simulate Tiger move
         this.tiger.pos = targetPos.clone();
-        
-        // Count landed hunter
         const landedHunter = Systems.getLandedHunter(this.tiger.pos, this.hunters, this.tiger.radius);
+        
         if (!landedHunter) {
-            // Restore state
             this.tiger.pos = originalTigerPos;
             savedHunters.forEach((h, i) => {
                 this.hunters[i].pos = h.pos;
                 this.hunters[i].incapacitated = h.incapacitated;
             });
-            return 0; // No landed hunter = bad move
+            return 0;
         }
         
-        // Simulate chain
         let chainCount = 1;
         let currentPos = landedHunter.pos;
         landedHunter.incapacitated = true;
@@ -316,7 +303,6 @@ export class Game {
         while (true) {
             const targets = Systems.getHuntersInPounceRange(currentPos, this.hunters, this.center, Systems.HAND_SPAN);
             const available = targets.filter(h => !h.incapacitated);
-            
             if (!available.length) break;
             
             const nextTarget = available[0];
@@ -325,7 +311,6 @@ export class Game {
             currentPos = nextTarget.pos;
         }
         
-        // Restore state
         this.tiger.pos = originalTigerPos;
         savedHunters.forEach((h, i) => {
             this.hunters[i].pos = h.pos;
@@ -354,6 +339,10 @@ export class Game {
             
             if (this.aiThinking) {
                 turnIndicator.textContent = 'TIGER is thinking...';
+            }
+            
+            if (this.tigerAIEnabled && this.turn === 'TIGER' && !this.aiThinking && !this.winner) {
+                statusDiv.textContent = "Tiger is automated. Control the Hunters.";
             }
         }
     }
