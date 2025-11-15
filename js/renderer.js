@@ -58,14 +58,14 @@ export class Renderer {
         this.ctx.lineWidth = 2;
         this.ctx.setLineDash([2, 4]);
         this.ctx.beginPath();
-        this.ctx.arc(tigerPos.x, tigerPos.y, Systems.POUNCE_RANGE, 0, Math.PI * 2);
+        this.ctx.arc(tigerPos.x, tigerPos.y, Systems.HAND_SPAN, 0, Math.PI * 2);
         this.ctx.stroke();
         this.ctx.setLineDash([]);
         
         // Label
         this.ctx.fillStyle = '#e74c3c';
         this.ctx.font = '12px Arial';
-        this.ctx.fillText('Pounce: 50px', 10, 100);
+        this.ctx.fillText('Pounce: 150px', 10, 100);
     }
     
     drawRoarEffect(tigerPos, hunters, center) {
@@ -115,15 +115,36 @@ export class Renderer {
         this.ctx.stroke();
     }
     
-    drawMoveOrder(hunters) {
-        const movedHunters = hunters.filter(h => h.hasMoved && !h.incapacitated && !h.isRemoved);
-        movedHunters.forEach((h, index) => {
-            ctx.fillStyle = 'white';
-            ctx.font = 'bold 12px Arial';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(index + 1, h.pos.x, h.pos.y);
-        });
+    // NEW: Draw ghost preview
+    drawGhostPreview(piece, ghostPos) {
+        if (!piece || !ghostPos) return;
+        
+        this.ctx.save();
+        this.ctx.globalAlpha = 0.35; // Ghostly transparency
+        
+        // Draw the ghost piece
+        this.ctx.fillStyle = piece.color;
+        this.ctx.beginPath();
+        this.ctx.arc(ghostPos.x, ghostPos.y, piece.radius, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        // Draw dashed white outline
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 2;
+        this.ctx.setLineDash([4, 4]);
+        this.ctx.beginPath();
+        this.ctx.arc(ghostPos.x, ghostPos.y, piece.radius + 5, 0, Math.PI * 2);
+        this.ctx.stroke();
+        this.ctx.setLineDash([]);
+        
+        // Add "preview" label
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = '10px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('preview', ghostPos.x, ghostPos.y - piece.radius - 10);
+        this.ctx.textAlign = 'left';
+        
+        this.ctx.restore();
     }
     
     draw(pieces, gameState = {}) {
@@ -145,6 +166,11 @@ export class Renderer {
         
         if (gameState.selectedPiece) {
             this.drawRangeIndicator(gameState.selectedPiece.pos, Systems.HAND_SPAN);
+        }
+        
+        // Draw ghost preview BEFORE regular pieces
+        if (gameState.ghostPreview && !gameState.isAnimating) {
+            this.drawGhostPreview(gameState.ghostPreview.piece, gameState.ghostPreview.position);
         }
         
         pieces.forEach(p => p.draw(this.ctx));
