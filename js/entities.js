@@ -39,19 +39,28 @@ export class Vector2 {
 }
 
 export class Piece {
-    constructor(pos, color, isTiger = false) {
+    constructor(pos, color, isTiger = false, stats = {}) {
         this.pos = pos;
         this.originalPos = pos.clone();
         this.color = color;
         this.isTiger = isTiger;
         this.incapacitated = false;
         this.isRemoved = false;
-        this.radius = isTiger ? 30 : 15;
+        
+        // NEW: Variable stats with defaults
+        this.radius = isTiger ? 30 : (stats.diameter ? stats.diameter / 2 : 15);
+        this.borderlandsTolerance = stats.borderlandsTolerance !== undefined ? stats.borderlandsTolerance : 3;
+        this.canMoveAfterRescue = stats.canMoveAfterRescue || false;
+        this.canMoveAfterBeingRescued = stats.canMoveAfterBeingRescued || false;
+        
         this.borderlandsTurns = 0;
-        this.hasMoved = false; // Tracks if moved/rescued this turn
+        this.hasMoved = false;
         this.isSelected = false;
         this.isVictoryPiece = false;
         this.moveOrder = null;
+        
+        // Visual indicator for special abilities
+        this.hunterType = stats.hunterType || 'standard';
         
         // Animation properties
         this.isAnimating = false;
@@ -116,6 +125,29 @@ export class Piece {
             ctx.beginPath();
             ctx.arc(drawPos.x, drawPos.y, this.radius + 8, 0, Math.PI * 2);
             ctx.stroke();
+        }
+        
+        // NEW: Draw Hunter type indicator
+        if (!this.isTiger && !this.incapacitated && !this.isRemoved) {
+            if (this.hunterType === 'scout') {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.font = 'bold 10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('S', drawPos.x, drawPos.y + 3);
+                ctx.textAlign = 'left';
+            } else if (this.hunterType === 'medic') {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.font = 'bold 10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('M', drawPos.x, drawPos.y + 3);
+                ctx.textAlign = 'left';
+            } else if (this.hunterType === 'veteran') {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.font = 'bold 10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('V', drawPos.x, drawPos.y + 3);
+                ctx.textAlign = 'left';
+            }
         }
         
         const color = this.incapacitated ? '#333333' : this.color;
