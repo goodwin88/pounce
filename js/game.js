@@ -11,7 +11,7 @@ export class Game {
         this.tigerRangeMultiplier = tigerRangeMultiplier;
         this.tigerAIEnabled = true;
         this.equidistantChoice = null;
-        this.terrain = null;
+        this.terrain = []; // Changed to array
         
         this.stats = {
             totalMoves: 0,
@@ -62,7 +62,7 @@ export class Game {
         const tigerDiameter = totalHunterDiameter * (this.difficulty / 5);
         this.tiger.radius = tigerDiameter / 2;
         
-        this.terrain = this.generateTerrain();
+        this.terrain = this.generateTerrain(); // Returns array
         
         this.turn = 'TIGER';
         this.huntersMoved = new Set();
@@ -75,6 +75,7 @@ export class Game {
         this.processingAction = false;
         this.aiThinking = false;
         this.equidistantChoice = null;
+        this.visibleHuntersThisTurn = []; // Cache for renderer
         
         this.stats = {
             totalMoves: 0,
@@ -86,40 +87,70 @@ export class Game {
         this.updateUI();
     }
     
+    // === NEW: Generate two terrain pieces with spacing ===
     generateTerrain() {
         const tigerDiameter = this.tiger.radius * 2;
-        const baseSide = tigerDiameter * 0.8;
-        const width = baseSide * (0.7 + Math.random() * 0.6);
-        const height = baseSide * (0.7 + Math.random() * 0.6);
-        const angle = Math.random() * Math.PI * 2;
-
-        // === FIX: Buffer zone to prevent edge-blocking ===
         const minEdgeBuffer = tigerDiameter * 1.5;
-        const minCenterBuffer = tigerDiameter;
-        
+        const minSpawnRadius = tigerDiameter;
         const maxSpawnRadius = Systems.CLEARING_RADIUS - minEdgeBuffer;
-        const minSpawnRadius = Math.min(minCenterBuffer, maxSpawnRadius);
+        const minTerrainSeparation = tigerDiameter * 1.5; // Must be able to pass between
+        
+        const generateSingleTerrain = (sizeMultiplier) => {
+            const baseSide = tigerDiameter * 0.8 * sizeMultiplier;
+            const width = baseSide * (0.7 + Math.random() * 0.6);
+            const height = baseSide * (0.7 + Math.random() * 0.6);
+            const angle = Math.random() * Math.PI * 2;
 
+            let attempts = 0;
+            let center;
+            do {
+                const r = minSpawnRadius + Math.random() * (maxSpawnRadius - minSpawnRadius);
+                const theta = Math.random() * Math.PI * 2;
+                center = new Vector2(
+                    this.center.x + r * Math.cos(theta),
+                    this.center.y + r * Math.sin(theta)
+                );
+                attempts++;
+            } while (attempts < 50 && this.isTerrainCollidingWithPieces(center, width, height, angle));
+            
+            return new Terrain(center, width, height, angle);
+        };
+
+        // Generate small terrain (sizeMultiplier = 1)
+        const smallTerrain = generateSingleTerrain(1);
+        
+        // Generate large terrain with double perimeter (sizeMultiplier = √2)
+        let largeTerrain;
         let attempts = 0;
-        let center;
         do {
-            const r = minSpawnRadius + Math.random() * (maxSpawnRadius - minSpawnRadius);
-            const theta = Math.random() * Math.PI * 2;
-            center = new Vector2(
-                this.center.x + r * Math.cos(theta),
-                this.center.y + r * Math.sin(theta)
-            );
+            largeTerrain = generateSingleTerrain(Math.SQRT2); // ≈ 1.414
             attempts++;
-        } while (attempts < 50 && this.isTerrainCollidingWithStart(center, width, height, angle));
+        } while (
+            attempts < 30 && 
+            this.isTerrainOverlapping(largeTerrain, smallTerrain, minTerrainSeparation)
+        );
 
-        return new Terrain(center, width, height, angle);
+        return [smallTerrain, largeTerrain];
     }
     
-    isTerrainCollidingWithStart(center, width, height, angle) {
+    // NEW: Check if two terrain pieces overlap or are too close
+    isTerrainOverlapping(terrain1, terrain2, minSeparation) {
+        if (!terrain1 || !terrain2) return false;
+        const dist = distance(terrain1.center, terrain2.center);
+        const minSafeDist = (terrain1.width + terrain2.width) / 2 + minSeparation;
+        return dist < minSafeDist;
+    }
+    
+    // Updated to check against all terrain pieces
+    isTerrainCollidingWithPieces(center, width, height, angle) {
         const tempTerrain = new Terrain(center, width, height, angle);
         if (tempTerrain.containsPoint(this.tiger.pos)) return true;
         for (let hunter of this.hunters) {
             if (tempTerrain.containsPoint(hunter.pos)) return true;
+        }
+        // Check against existing terrain pieces
+        for (let existing of this.terrain) {
+            if (existing && this.isTerrainOverlapping(tempTerrain, existing, this.tiger.radius * 2)) return true;
         }
         return false;
     }
@@ -157,7 +188,8 @@ export class Game {
             this.turnIndicator.textContent = `${turnText}${movesLeft} | Size: ${diffName}`;
             
             if (this.turn === 'TIGER' && this.statusDiv && !this.winner) {
-                this.statusDiv.textContent = `Tiger Range: ${tigerRange}px | Terrain blocks movement`;
+                const visibleCount = this.visibleHuntersThisTurn.length;
+                this.statusDiv.textContent = `Tiger Range: ${tigerRange}px | Visible: ${visibleCount}/5 | Terrain blocks LOS`;
             }
         }
     }
@@ -167,7 +199,7 @@ export class Game {
             tiger: { 
                 pos: this.tiger.pos, 
                 incapacitated: this.tiger.incapacitated,
-                tigerRangeMultiplier: this.tiger.tigerRangeMultiplier
+                tigerRangeMultiplier: this.tigerRangeMultiplier
             },
             hunters: this.hunters.map(h => ({
                 pos: h.pos,
@@ -211,7 +243,7 @@ export class Game {
                         this.hunters[i].radius = h.stats.diameter ? h.stats.diameter / 2 : 15;
                         this.hunters[i].borderlandsTolerance = h.stats.borderlandsTolerance || 3;
                         this.hunters[i].canMoveAfterRescue = h.stats.canMoveAfterRescue || false;
-                        this.hunters[i].canMoveAfterBeingRescued = h.canMoveAfterBeingRescued || false;
+                        this.hunters[i].canMoveAfterBeingRescued = h.stats.canMoveAfterBeingRescued || false;
                         this.hunters[i].hunterType = h.stats.hunterType || 'standard';
                     }
                 }
@@ -266,10 +298,13 @@ export class Game {
             return;
         }
         
-        if (this.terrain && this.terrain.containsPoint(targetPos)) {
-            console.log("Move blocked: terrain collision");
-            if (this.statusDiv) this.statusDiv.textContent = "Target is inside terrain! Choose another location.";
-            return;
+        // Check all terrain pieces for collision
+        for (let t of this.terrain) {
+            if (t && t.containsPoint(targetPos)) {
+                console.log("Move blocked: terrain collision");
+                if (this.statusDiv) this.statusDiv.textContent = "Target is inside terrain! Choose another location.";
+                return;
+            }
         }
         
         let dist = piece.pos.distanceTo(targetPos);
@@ -309,9 +344,11 @@ export class Game {
         }
     }
     
+    // LOS-aware compulsory pounce
     checkCompulsoryPounce() {
         const pounceRange = this.tiger.getTigerRange();
-        const targets = Systems.getHuntersInPounceRange(this.tiger.pos, this.hunters, this.center, pounceRange);
+        const targets = Systems.getHuntersInPounceRangeWithLOS(this.tiger.pos, this.hunters, this.center, pounceRange, this.terrain);
+        this.visibleHuntersThisTurn = targets; // Cache for UI
         
         if (targets.length === 0) return null;
         
@@ -369,7 +406,9 @@ export class Game {
                 this.processPounceChain(landedHunter);
             } else {
                 console.log("Tiger landed on empty space, checking for ROAR");
-                this.roarActive = Systems.getHuntersInPounceRange(this.tiger.pos, this.hunters, this.center, pounceRange).length > 0;
+                // LOS-aware ROAR check
+                const visibleThreats = Systems.getHuntersInPounceRangeWithLOS(this.tiger.pos, this.hunters, this.center, pounceRange, this.terrain);
+                this.roarActive = visibleThreats.length > 0;
                 if (this.roarActive) console.log("ROAR!");
                 
                 console.log("Tiger turn ending, switching to Hunters");
@@ -410,13 +449,14 @@ export class Game {
         this.performNextPounce(this.tiger.pos);
     }
     
+    // LOS-aware pounce chain
     performNextPounce(fromPos) {
         console.log("--- Checking for next pounce ---");
         const pounceRange = this.tiger.getTigerRange();
-        const targets = Systems.getHuntersInPounceRange(fromPos, this.hunters, this.center, pounceRange);
+        const targets = Systems.getHuntersInPounceRangeWithLOS(fromPos, this.hunters, this.center, pounceRange, this.terrain);
         
         if (!targets.length) {
-            console.log("No more targets. Pounce chain ended.");
+            console.log("No more visible targets. Pounce chain ended.");
             this.turn = 'HUNTERS';
             this.huntersMoved.clear();
             this.processingAction = false;
@@ -581,7 +621,15 @@ export class Game {
             const normalized = clampedDist > 0 ? dir.mult(1 / dir.distanceTo(new Vector2(0, 0))) : new Vector2(0, 0);
             targetPos = this.tiger.pos.add(normalized.mult(clampedDist));
             
-            if (this.terrain && this.terrain.containsPoint(targetPos)) continue;
+            // Skip if target is in any terrain
+            let blocked = false;
+            for (let t of this.terrain) {
+                if (t && t.containsPoint(targetPos)) {
+                    blocked = true;
+                    break;
+                }
+            }
+            if (blocked) continue;
             
             const pounceRange = this.tiger.getTigerRange();
             const chainScore = this.simulatePounceChain(targetPos, pounceRange);
@@ -598,6 +646,7 @@ export class Game {
         return possibleTargets[0]?.pos || null;
     }
     
+    // LOS-aware simulation
     simulatePounceChain(targetPos, pounceRange) {
         const tempTiger = new Piece(this.tiger.pos.clone(), this.tiger.color, true, {
             tigerRangeMultiplier: this.tigerRangeMultiplier
@@ -627,7 +676,8 @@ export class Game {
         landedHunter.incapacitated = true;
         
         while (true) {
-            const targets = Systems.getHuntersInPounceRange(currentPos, tempHunters, this.center, pounceRange);
+            // Use LOS version in simulation
+            const targets = Systems.getHuntersInPounceRangeWithLOS(currentPos, tempHunters, this.center, pounceRange, this.terrain);
             const available = targets.filter(h => !h.incapacitated && !h.isRemoved);
             if (!available.length) break;
             
@@ -694,7 +744,7 @@ export class Game {
         const turnsInBorderlands = [inTurn1, inTurn2].filter(Boolean).length;
         
         if (turnsInBorderlands >= tolerance - 1) return 2;
-        if (turnsInBorderlands >= tolerance - 2 && tolerance > 2) return 1;
+        if (turnsInTurnsInBorderlands >= tolerance - 2 && tolerance > 2) return 1;
         
         return 0;
     }
