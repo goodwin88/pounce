@@ -124,7 +124,6 @@ export class Renderer {
         this.ctx.textAlign = 'left';
     }
     
-    // CRITICAL FIX: Now receives actual Game instance
     drawCampingWarnings(gameInstance) {
         gameInstance.hunters.forEach(hunter => {
             const warningLevel = gameInstance.getCampingWarning(hunter);
@@ -141,14 +140,22 @@ export class Renderer {
             this.ctx.stroke();
             this.ctx.setLineDash([]);
             
-            this.ctx.fillStyle = color;
-            this.ctx.font = 'bold 10px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText(
-                warningLevel === 2 ? 'REMOVE NEXT TURN!' : 'Camp Warning',
-                hunter.pos.x,
-                hunter.pos.y - hunter.radius - 15
-            );
+            // NEW: Show veteran immunity
+            if (hunter.isVeteran()) {
+                this.ctx.fillStyle = '#3498db';
+                this.ctx.font = 'bold 10px Arial';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText('VETERAN', hunter.pos.x, hunter.pos.y - hunter.radius - 15);
+            } else {
+                this.ctx.fillStyle = color;
+                this.ctx.font = 'bold 10px Arial';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText(
+                    warningLevel === 2 ? 'REMOVE NEXT TURN!' : 'Camp Warning',
+                    hunter.pos.x,
+                    hunter.pos.y - hunter.radius - 15
+                );
+            }
             this.ctx.textAlign = 'left';
         });
     }
@@ -204,14 +211,16 @@ export class Renderer {
         });
     }
     
-    drawStats(stats) {
+    drawStats(stats, difficulty) {
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        this.ctx.fillRect(this.canvas.width - 200, 10, 190, 100);
+        this.ctx.fillRect(this.canvas.width - 200, 10, 190, 115);
         
         this.ctx.fillStyle = '#ecf0f1';
         this.ctx.font = '12px Arial';
         this.ctx.textAlign = 'right';
         let y = 30;
+        this.ctx.fillText(`Difficulty: ${difficulty}`, this.canvas.width - 20, y);
+        y += 15;
         this.ctx.fillText(`Total Moves: ${stats.totalMoves}`, this.canvas.width - 20, y);
         y += 15;
         this.ctx.fillText(`Pounce Chains: ${stats.pounceChains.length}`, this.canvas.width - 20, y);
@@ -232,7 +241,6 @@ export class Renderer {
             this.drawRoarEffect(gameState.tiger.pos, gameState.hunters, this.center);
         }
         
-        // CRITICAL FIX: Pass gameInstance to drawCampingWarnings
         if (gameState.turn === 'HUNTERS' && !gameState.winner && gameState.gameInstance) {
             this.drawCampingWarnings(gameState.gameInstance);
         }
@@ -246,7 +254,8 @@ export class Renderer {
         }
         
         if (gameState.selectedPiece) {
-            this.drawRangeIndicator(gameState.selectedPiece.pos, Systems.HAND_SPAN);
+            const range = gameState.selectedPiece.getMoveRange();
+            this.drawRangeIndicator(gameState.selectedPiece.pos, range);
         }
         
         if (gameState.ghostPreview && !gameState.isAnimating) {
@@ -256,7 +265,7 @@ export class Renderer {
         this.drawPieces(pieces, gameState);
         
         if (gameState.stats) {
-            this.drawStats(gameState.stats);
+            this.drawStats(gameState.stats, Systems.DIFFICULTY_LEVELS[gameState.gameInstance?.difficulty || 3].name);
         }
     }
 }
