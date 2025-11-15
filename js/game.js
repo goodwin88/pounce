@@ -2,9 +2,11 @@ import { Piece, Vector2 } from './entities.js';
 import * as Systems from './systems.js';
 
 export class Game {
-    constructor(canvas) {
+    constructor(canvas, turnIndicator, statusDiv) {
         this.canvas = canvas;
         this.center = new Vector2(canvas.width / 2, canvas.height / 2);
+        this.turnIndicator = turnIndicator;
+        this.statusDiv = statusDiv;
         this.reset();
         this.tigerAIEnabled = true; // Set to false for 2-player mode
     }
@@ -42,6 +44,23 @@ export class Game {
     
     isAnimating() {
         return this.getAllPieces().some(p => p.isAnimating) || this.processingAction || this.aiThinking;
+    }
+    
+    updateUI() {
+        if (!this.turnIndicator) return;
+        
+        if (this.winner) {
+            this.turnIndicator.textContent = `${this.winner} WINS!`;
+            if (this.statusDiv) {
+                this.statusDiv.textContent = this.winner === 'TIGER' 
+                    ? 'All Hunters have been pounced!' 
+                    : 'The Tiger is trapped in the triangle!';
+            }
+        } else if (this.aiThinking) {
+            this.turnIndicator.textContent = 'Tiger Thinking...';
+        } else {
+            this.turnIndicator.textContent = `${this.turn === 'TIGER' ? 'Tiger' : 'Hunters'}'s Turn`;
+        }
     }
     
     selectPiece(pos) {
