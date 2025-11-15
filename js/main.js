@@ -34,7 +34,6 @@ document.addEventListener('DOMContentLoaded', () => {
             canvas.style.cursor = 'grabbing';
             const movesLeft = game.turn === 'HUNTERS' ? ` (${5 - game.huntersMoved.size} moves left)` : '';
             statusDiv.textContent = `${piece.isTiger ? 'TIGER' : 'HUNTER'} selected${movesLeft}. Click within yellow ring.`;
-            console.log('Selected:', piece.isTiger ? 'Tiger' : 'Hunter');
         }
     });
 
@@ -63,6 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedPiece = null;
         dragPreview = null;
         canvas.style.cursor = 'pointer';
+        game.updateUI();
     });
 
     resetBtn.addEventListener('click', () => {
@@ -71,29 +71,9 @@ document.addEventListener('DOMContentLoaded', () => {
         game.reset();
         selectedPiece = null;
         dragPreview = null;
-        updateUI();
+        game.updateUI();
         statusDiv.textContent = "Game reset! Click the RED TIGER to start.";
     });
-
-    function updateUI() {
-        if (game.winner) {
-            turnIndicator.textContent = `${game.winner} WINS!`;
-            turnIndicator.style.color = '#e74c3c';
-            statusDiv.innerHTML = `<span style="color: #27ae60; font-weight: bold;">Victory!</span>`;
-        } else {
-            turnIndicator.textContent = `${game.turn}'s Turn`;
-            turnIndicator.style.color = game.turn === 'TIGER' ? '#e74c3c' : '#27ae60';
-            
-            if (game.turn === 'HUNTERS') {
-                const remaining = 5 - game.huntersMoved.size;
-                turnIndicator.textContent += ` (${remaining} moves left)`;
-            }
-            
-            if (game.isAnimating()) {
-                turnIndicator.textContent += ' - Animating...';
-            }
-        }
-    }
 
     function gameLoop() {
         const currentTime = performance.now();
@@ -102,7 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const isAnimating = game.update(currentTime);
         if (isAnimating) {
-            updateUI();
+            game.updateUI();
         }
 
         renderer.clear();
@@ -140,7 +120,8 @@ document.addEventListener('DOMContentLoaded', () => {
         requestAnimationFrame(gameLoop);
     }
 
-    updateUI();
-    statusDiv.textContent = "Game ready! Click the RED TIGER to begin.";
+    // Initial UI setup
+    game.updateUI();
+    statusDiv.textContent = "Game ready! Tiger is automated. Control the Hunters.";
     gameLoop();
 });
