@@ -6,6 +6,7 @@ export class Game {
         this.canvas = canvas;
         this.center = new Vector2(canvas.width / 2, canvas.height / 2);
         this.reset();
+        this.tigerAIEnabled = true; // Toggle AI on/off
     }
     
     reset() {
@@ -32,6 +33,7 @@ export class Game {
         this.moveHistory = [];
         this.animationQueue = [];
         this.processingAction = false;
+        this.aiThinking = false;
     }
     
     getAllPieces() {
@@ -39,21 +41,21 @@ export class Game {
     }
     
     isAnimating() {
-        return this.getAllPieces().some(p => p.isAnimating) || this.processingAction;
+        return this.getAllPieces().some(p => p.isAnimating) || this.processingAction || this.aiThinking;
     }
     
     selectPiece(pos) {
         if (this.winner || this.isAnimating()) return null;
         
         const tigerDist = this.tiger.pos.distanceTo(pos);
-        if (this.turn === 'TIGER' && tigerDist <= this.tiger.radius) {
+        if (this.turn === 'TIGER' && tigerDist <= this.tiger.radius && !this.tigerAIEnabled) {
             return this.tiger;
         } else if (this.turn === 'HUNTERS') {
             for (let hunter of this.hunters) {
                 if (!hunter.incapacitated && !hunter.isRemoved &&
                     hunter.pos.distanceTo(pos) <= hunter.radius &&
-                    !this.huntersMoved.has(hunter) && // Skip if already moved/rescued
-                    !hunter.hasMoved) { // NEW: Skip if rescued this turn
+                    !this.huntersMoved.has(hunter) &&
+                    !hunter.hasMoved) {
                     return hunter;
                 }
             }
@@ -186,8 +188,8 @@ export class Game {
             if (rescued) {
                 rescued.incapacitated = false;
                 rescued.borderlandsTurns = 0;
-                rescued.hasMoved = true; // CRITICAL: Cannot move this turn
-                this.huntersMoved.add(rescued); // Add to moved set to block selection
+                rescued.hasMoved = true; // Cannot move this turn
+                this.huntersMoved.add(rescued); // Add to prevent selection
                 console.log("Hunter rescued! Cannot move this turn.");
             }
             
@@ -197,10 +199,19 @@ export class Game {
                 this.turn = 'TIGER';
                 this.huntersMoved.clear();
                 this.hunters.forEach(h => {
-                    h.hasMoved = false; // Reset for next turn
+                    h.hasMoved = false;
                     h.moveOrder = null;
                 });
                 this.enforceCampingPenalty();
+                // Trigger AI after Hunter turn ends
+                if (this.tigerAIEnabled && !this.winner) {
+                    setTimeout(() => this.executeTigerAI(), 500);
+                }
+            } else {
+                // If rescue happened, update UI immediately
+                if (rescued) {
+                    this.updateUI();
+                }
             }
             
             const victory = Systems.checkHunterVictory(this.tiger, this.hunters, this.center);
@@ -213,35 +224,136 @@ export class Game {
         }, hunter.animationDuration);
     }
     
-    recordTurnPositions() {
-        const positions = this.hunters.map(h => ({
-            hunter: h,
-            pos: h.pos.clone(),
-            inBorderlands: Systems.isInBorderlands(h.pos, this.center)
-        }));
-        this.moveHistory.push(positions);
-        if (this.moveHistory.length > 2) this.moveHistory.shift();
+    // NEW: Tiger AI
+    executeTigerAI() {
+        if (this.winner || this.turn !== 'TIGER' || !this.tigerAIEnabled) return;
+        
+        console.log("=== TIGER AI THINKING ===");
+        this.aiThinking = true;
+        this.updateUI();
+        
+        setTimeout(() => {
+            const bestMove = this.calculateBestTigerMove();
+            this.aiThinking = false;
+            
+            if (bestMove) {
+                console.log("Tiger AI moving to:", bestMove);
+                this.movePiece(this.tiger, bestMove);
+            } else {
+                console.log("Tiger AI: No valid move found?!");
+                this.turn = 'HUNTERS';
+                this.huntersMoved.clear();
+            }
+        }, 800); // "Thinking" delay
     }
     
-    enforceCampingPenalty() {
-        if (this.moveHistory.length < 2) return;
+    // NEW: Calculate best Tiger move
+    calculateBestTigerMove() {
+        const possibleTargets = [];
         
-        const anyInClearing = this.hunters.some(h => 
-            !h.incapacitated && !h.isRemoved && Systems.isInClearing(h.pos, this.center)
-        );
-        if (!anyInClearing) return;
-        
-        const [turn1, turn2] = this.moveHistory.slice(-2);
-        
-        for (let hunter of this.hunters) {
-            if (hunter.incapacitated || hunter.isRemoved) continue;
+        // Sample grid of potential target positions within HAND_SPAN
+        const samples = 12;
+        for (let angle = 0; angle < Math.PI * 2; angle += (Math.PI * 2) / samples) {
+            const targetPos = new Vector2(
+                this.tiger.pos.x + Math.cos(angle) * Systems.HAND_SPAN,
+                this.tiger.pos.y + Math.sin(angle) * Systems.HAND_SPAN
+            );
             
-            const posInTurn1 = turn1.find(p => p.hunter === hunter);
-            const posInTurn2 = turn2.find(p => p.hunter === hunter);
+            // Clamp to Clearing boundary
+            const maxCenterDist = Systems.CLEARING_RADIUS - this.tiger.radius;
+            if (targetPos.distanceTo(this.center) > maxCenterDist) {
+                const clampAngle = Math.atan2(targetPos.y - this.center.y, targetPos.x - this.center.x);
+                targetPos.x = this.center.x + Math.cos(clampAngle) * maxCenterDist;
+                targetPos.y = this.center.y + Math.sin(clampAngle) * maxCenterDist;
+            }
             
-            if (posInTurn1?.inBorderlands && posInTurn2?.inBorderlands) {
-                console.log(`Hunter removed for camping!`);
-                hunter.isRemoved = true;
+            // Simulate chain length
+            const chainScore = this.simulatePounceChain(targetPos);
+            
+            possibleTargets.push({
+                pos: targetPos,
+                score: chainScore
+            });
+        }
+        
+        // Sort by score (chain length), highest first
+        possibleTargets.sort((a, b) => b.score - a.score);
+        
+        console.log("Tiger AI evaluated", possibleTargets.length, "moves. Best score:", possibleTargets[0]?.score || 0);
+        
+        return possibleTargets[0]?.pos || null;
+    }
+    
+    // NEW: Simulate pounce chain to calculate score
+    simulatePounceChain(targetPos) {
+        // Temporarily save real state
+        const originalTigerPos = this.tiger.pos.clone();
+        const savedHunters = this.hunters.map(h => ({
+            pos: h.pos.clone(),
+            incapacitated: h.incapacitated
+        }));
+        
+        // Simulate Tiger move
+        this.tiger.pos = targetPos.clone();
+        
+        // Count landed hunter
+        const landedHunter = Systems.getLandedHunter(this.tiger.pos, this.hunters, this.tiger.radius);
+        if (!landedHunter) {
+            // Restore state
+            this.tiger.pos = originalTigerPos;
+            savedHunters.forEach((h, i) => {
+                this.hunters[i].pos = h.pos;
+                this.hunters[i].incapacitated = h.incapacitated;
+            });
+            return 0; // No landed hunter = bad move
+        }
+        
+        // Simulate chain
+        let chainCount = 1;
+        let currentPos = landedHunter.pos;
+        landedHunter.incapacitated = true;
+        
+        while (true) {
+            const targets = Systems.getHuntersInPounceRange(currentPos, this.hunters, this.center, Systems.HAND_SPAN);
+            const available = targets.filter(h => !h.incapacitated);
+            
+            if (!available.length) break;
+            
+            const nextTarget = available[0];
+            nextTarget.incapacitated = true;
+            chainCount++;
+            currentPos = nextTarget.pos;
+        }
+        
+        // Restore state
+        this.tiger.pos = originalTigerPos;
+        savedHunters.forEach((h, i) => {
+            this.hunters[i].pos = h.pos;
+            this.hunters[i].incapacitated = h.incapacitated;
+        });
+        
+        return chainCount;
+    }
+    
+    updateUI() {
+        const statusDiv = document.getElementById('status');
+        const turnIndicator = document.getElementById('turn-indicator');
+        
+        if (this.winner) {
+            turnIndicator.textContent = `${this.winner} WINS!`;
+            turnIndicator.style.color = '#e74c3c';
+            statusDiv.innerHTML = `<span style="color: #27ae60; font-weight: bold;">Victory!</span>`;
+        } else {
+            turnIndicator.textContent = `${this.turn}'s Turn`;
+            turnIndicator.style.color = this.turn === 'TIGER' ? '#e74c3c' : '#27ae60';
+            
+            if (this.turn === 'HUNTERS') {
+                const remaining = 5 - this.huntersMoved.size;
+                turnIndicator.textContent += ` (${remaining} moves left)`;
+            }
+            
+            if (this.aiThinking) {
+                turnIndicator.textContent = 'TIGER is thinking...';
             }
         }
     }
