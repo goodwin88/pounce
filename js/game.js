@@ -71,7 +71,7 @@ export class Game {
         this.animationQueue = [];
         this.processingAction = false;
         this.aiThinking = false;
-        this.equidistantChoice = null;
+        this.Choice = null;
         
         this.stats = {
             totalMoves: 0,
@@ -103,7 +103,7 @@ export class Game {
             }
         } else if (this.aiThinking) {
             this.turnIndicator.textContent = 'Tiger Thinking...';
-        } else if (this.equidistantChoice) {
+        } else if (this.Choice) {
             this.turnIndicator.textContent = 'Tiger: Choose Target!';
         } else {
             const diffName = Systems.DIFFICULTY_LEVELS[this.difficulty].name;
@@ -271,12 +271,12 @@ export class Game {
         setTimeout(() => {
             this.tiger.updateAnimation(this.tiger.animationEnd);
             
-            // NEW: Check for equidistant hunters
-            const equidistant = Systems.getEquidistantHunters(this.tiger.pos, this.hunters, Systems.HAND_SPAN);
-            if (equidistant.length > 1 && this.tigerAIEnabled) {
-                this.processEquidistantChoice(equidistant);
-                return;
-            }
+            // NEW: Check for  hunters
+            const equidistant = Systems.getEquidistantHunters(this.tiger.pos, this.hunters, this.center, Systems.HAND_SPAN);
+if (equidistant.length > 1 && this.tigerAIEnabled) {
+    this.processEquidistantChoice(equidistant);
+    return;  // ❌ Flag stays true!
+}
             
             const landedHunter = Systems.getLandedHunter(this.tiger.pos, this.hunters, this.tiger.radius);
             
