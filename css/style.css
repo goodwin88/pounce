@@ -104,9 +104,15 @@ button:hover {
     margin-top: 0;
 }
 
-canvas:focus {
-    outline: 2px solid #3498db;
-    outline-offset: 2px;
+canvas {
+    border: 2px solid #34495e;
+    cursor: pointer;
+    touch-action: none;
+    display: block; /* ✅ Prevent inline alignment issues */
+    width: 800px;
+    height: 800px;
+    max-width: 100%;
+    /* height: auto ← REMOVE THIS if present */
 }
 
 .dimmed {
