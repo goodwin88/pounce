@@ -47,7 +47,7 @@ export class Renderer {
         this.ctx.fillText(`Move: ${Math.round(range)}px`, 10, 80);
     }
     
-    drawPounceRange(tigerPos, hunters, center, range) {
+    drawPounceRange(tigerPos, visibleHunters, center, range) {
         this.ctx.strokeStyle = 'rgba(231, 76, 60, 0.3)';
         this.ctx.lineWidth = 2;
         this.ctx.setLineDash([2, 4]);
@@ -61,14 +61,8 @@ export class Renderer {
         this.ctx.fillText(`Pounce: ${Math.round(range)}px`, 10, 100);
     }
     
-    drawRoarEffect(tigerPos, hunters, center, range) {
-        const threatened = hunters.filter(h => 
-            !h.incapacitated && !h.isRemoved && 
-            Systems.distance(tigerPos, h.pos) <= range &&
-            Systems.isInClearing(h.pos, center)
-        );
-        
-        if (!threatened.length) return;
+    drawRoarEffect(tigerPos, threatenedHunters, range) {
+        if (!threatenedHunters || threatenedHunters.length === 0) return;
         
         const pulse = Math.sin(Date.now() / 100) * 0.3 + 0.7;
         this.ctx.strokeStyle = `rgba(231, 76, 60, ${pulse})`;
@@ -77,7 +71,7 @@ export class Renderer {
         this.ctx.arc(tigerPos.x, tigerPos.y, range, 0, Math.PI * 2);
         this.ctx.stroke();
         
-        threatened.forEach(h => {
+        threatenedHunters.forEach(h => {
             this.ctx.strokeStyle = `rgba(231, 76, 60, ${pulse})`;
             this.ctx.lineWidth = 3;
             this.ctx.beginPath();
@@ -210,19 +204,28 @@ export class Renderer {
         });
     }
     
-    // NEW: Draw terrain obstacle
-    drawTerrain(terrain) {
-        if (!terrain) return;
+    // UPDATED: Draw array of terrain pieces
+    drawTerrain(terrainArray) {
+        if (!terrainArray || terrainArray.length === 0) return;
         
-        this.ctx.save();
-        this.ctx.translate(terrain.center.x, terrain.center.y);
-        this.ctx.rotate(terrain.angle);
-        this.ctx.fillStyle = '#666666';
-        this.ctx.strokeStyle = '#333333';
-        this.ctx.lineWidth = 2;
-        this.ctx.fillRect(-terrain.width / 2, -terrain.height / 2, terrain.width, terrain.height);
-        this.ctx.strokeRect(-terrain.width / 2, -terrain.height / 2, terrain.width, terrain.height);
-        this.ctx.restore();
+        terrainArray.forEach((terrain, index) => {
+            if (!terrain) return;
+            
+            this.ctx.save();
+            this.ctx.translate(terrain.center.x, terrain.center.y);
+            this.ctx.rotate(terrain.angle);
+            
+            // Different shade for small vs large
+            const fillColor = index === 0 ? '#666666' : '#444444';
+            const strokeColor = index === 0 ? '#333333' : '#111111';
+            
+            this.ctx.fillStyle = fillColor;
+            this.ctx.strokeStyle = strokeColor;
+            this.ctx.lineWidth = 2;
+            this.ctx.fillRect(-terrain.width / 2, -terrain.height / 2, terrain.width, terrain.height);
+            this.ctx.strokeRect(-terrain.width / 2, -terrain.height / 2, terrain.width, terrain.height);
+            this.ctx.restore();
+        });
     }
     
     drawStats(stats, difficultyName, rangeName) {
@@ -244,7 +247,7 @@ export class Renderer {
         this.ctx.fillText(`Camping Removals: ${stats.campingRemovals}`, this.canvas.width - 20, y);
         y += 15;
         this.ctx.fillText(`Avg Chain Length: ${stats.pounceChains.length > 0 
-            ? (stats.pounceChains.reduce((a, c) => a + c.huntersPounced, 0) / s.pounceChains.length).toFixed(1)
+            ? (stats.pounceChains.reduce((a, c) => a + c.huntersPounced, 0) / stats.pounceChains.length).toFixed(1)
             : 0}`, this.canvas.width - 20, y);
         this.ctx.textAlign = 'left';
     }
@@ -255,13 +258,23 @@ export class Renderer {
         
         const tigerRange = gameState.tiger?.getTigerRange?.() || Systems.HAND_SPAN;
         
+        // Get visible hunters for this turn
+        const visibleInRange = Systems.getHuntersInPounceRangeWithLOS(
+            gameState.tiger?.pos || this.center,
+            gameState.hunters || [],
+            this.center,
+            tigerRange,
+            gameState.terrain || []
+        );
+        
         if (gameState.roarActive && gameState.turn === 'TIGER') {
-            this.drawRoarEffect(gameState.tiger.pos, gameState.hunters, gameState.center, tigerRange);
+            this.drawRoarEffect(gameState.tiger.pos, visibleInRange, tigerRange);
         }
         
-        // Use dynamic pounce range
-        if ((gameState.selectedPiece?.isTiger || gameState.roarActive || gameState.turn === 'TIGER')) {
-            this.drawPounceRange(gameState.tiger.pos, gameState.hunters, gameState.center, tigerRange);
+        // Draw pounce range only if there are visible targets
+        // if ((gameState.selectedPiece?.isTiger || gameState.roarActive || gameState.turn === 'TIGER') && visibleInRange.length > 0) {
+        if ((gameState.turn === 'TIGER') && visibleInRange.length > 0) {
+            this.drawPounceRange(gameState.tiger.pos, visibleInRange, this.center, tigerRange);
         }
         
         if (gameState.turn === 'HUNTERS' && !gameState.winner && gameState.gameInstance) {
@@ -272,8 +285,8 @@ export class Renderer {
             this.drawVictoryTriangle(gameState.winningHunters);
         }
         
-        // NEW: Draw terrain
-        if (gameState.terrain) {
+        // Draw both terrain pieces
+        if (gameState.terrain && gameState.terrain.length > 0) {
             this.drawTerrain(gameState.terrain);
         }
         
