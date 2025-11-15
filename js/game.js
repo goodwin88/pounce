@@ -36,7 +36,7 @@ export class Game {
         
         const shuffledProfiles = hunterProfiles.sort(() => Math.random() - 0.5);
         
-        let totalHunterDiameter = 0; // NEW: Calculate total diameter
+        let totalHunterDiameter = 0;
         
         for (let i = 0; i < 5; i++) {
             const angle = randomOffset + i * angleStep;
@@ -49,10 +49,9 @@ export class Game {
             const hunter = new Piece(pos, '#27ae60', false, shuffledProfiles[i]);
             this.hunters.push(hunter);
             
-            totalHunterDiameter += shuffledProfiles[i].diameter; // Sum all diameters
+            totalHunterDiameter += shuffledProfiles[i].diameter;
         }
         
-        // NEW: Set Tiger radius based on sum of Hunter diameters
         const tigerDiameter = totalHunterDiameter;
         this.tiger.radius = tigerDiameter / 2;
         
@@ -65,19 +64,4 @@ export class Game {
         this.moveHistory = [];
         this.animationQueue = [];
         this.processingAction = false;
-        this.aiThinking = false;
-        
-        this.stats = {
-            totalMoves: 0,
-            pounceChains: [],
-            campingRemovals: 0,
-            triangleForms: 0
-        };
-    }
-    
-    // ... rest of the file remains the same (you can keep your current game.js from previous update)
-    // Just ensure the reset() method above replaces the one in your current file
-    
-    // Add all other methods from your current game.js here...
-    // (getAllPieces, isAnimating, updateUI, getState, loadState, selectPiece, movePiece, executeTigerTurn, processPounceChain, performNextPounce, executeHunterTurn, executeTigerAI, calculateBestTigerMove, simulatePounceChain, recordTurnPositions, enforceCampingPenalty, getCampingWarning, update)
-}
+        this.aiThinking
