@@ -2,14 +2,15 @@ import { Piece, Vector2 } from './entities.js';
 import * as Systems from './systems.js';
 
 export class Game {
-    constructor(canvas, turnIndicator, statusDiv, difficulty = 3) {
+    constructor(canvas, turnIndicator, statusDiv, difficulty = 3, tigerRangeMultiplier = 1.0) {
         this.canvas = canvas;
         this.center = new Vector2(canvas.width / 2, canvas.height / 2);
         this.turnIndicator = turnIndicator;
         this.statusDiv = statusDiv;
         this.difficulty = difficulty;
+        this.tigerRangeMultiplier = tigerRangeMultiplier; // NEW
         this.tigerAIEnabled = true;
-        this.equidistantChoice = null; // NEW: For equidistant pouncing
+        this.equidistantChoice = null;
         
         this.stats = {
             totalMoves: 0,
@@ -22,7 +23,9 @@ export class Game {
     }
     
     reset() {
-        this.tiger = new Piece(this.center.clone(), '#e74c3c', true);
+        this.tiger = new Piece(this.center.clone(), '#e74c3c', true, {
+            tigerRangeMultiplier: this.tigerRangeMultiplier // NEW
+        });
         
         this.hunters = [];
         const angleStep = (Math.PI * 2) / 5;
@@ -57,7 +60,7 @@ export class Game {
             totalHunterDiameter += shuffledProfiles[i].diameter;
         }
         
-        // NEW: Apply difficulty scaling
+        // Apply difficulty scaling
         const tigerDiameter = totalHunterDiameter * (this.difficulty / 5);
         this.tiger.radius = tigerDiameter / 2;
         
@@ -71,7 +74,7 @@ export class Game {
         this.animationQueue = [];
         this.processingAction = false;
         this.aiThinking = false;
-        this.Choice = null;
+        this.equidistantChoice = null;
         
         this.stats = {
             totalMoves: 0,
@@ -103,22 +106,33 @@ export class Game {
             }
         } else if (this.aiThinking) {
             this.turnIndicator.textContent = 'Tiger Thinking...';
-        } else if (this.Choice) {
+        } else if (this.equidistantChoice) {
             this.turnIndicator.textContent = 'Tiger: Choose Target!';
         } else {
             const diffName = Systems.DIFFICULTY_LEVELS[this.difficulty].name;
+            const rangeName = Systems.TIGER_RANGE_MULTIPLIERS[this.tigerRangeMultiplier].name;
+            const tigerRange = Math.round(this.tiger.getTigerRange());
             const turnText = `${this.turn === 'TIGER' ? 'Tiger' : 'Hunters'}'s Turn`;
             const totalMovable = this.hunters.filter(h => !h.incapacitated && !h.isRemoved).length;
             const movesLeft = this.turn === 'HUNTERS' 
                 ? ` (${this.hunters.filter(h => !h.hasMoved && !h.incapacitated && !h.isRemoved).length} of ${totalMovable} Hunters available)` 
-                : '';
-            this.turnIndicator.textContent = `${turnText}${movesLeft} - ${diffName}`;
+                : ` - ${rangeName} Range (${tigerRange}px)`;
+            this.turnIndicator.textContent = `${turnText}${movesLeft} | ${diffName}`;
+            
+            // Update status with range info
+            if (this.turn === 'TIGER' && this.statusDiv && !this.winner) {
+                this.statusDiv.textContent = `Tiger Range: ${tigerRange}px`;
+            }
         }
     }
     
     getState() {
         return JSON.stringify({
-            tiger: { pos: this.tiger.pos, incapacitated: this.tiger.incapacitated },
+            tiger: { 
+                pos: this.tiger.pos, 
+                incapacitated: this.tiger.incapacitated,
+                tigerRangeMultiplier: this.tigerRangeMultiplier // NEW
+            },
             hunters: this.hunters.map(h => ({
                 pos: h.pos,
                 incapacitated: h.incapacitated,
@@ -136,7 +150,8 @@ export class Game {
             turn: this.turn,
             moveHistory: this.moveHistory,
             stats: this.stats,
-            difficulty: this.difficulty
+            difficulty: this.difficulty,
+            tigerRangeMultiplier: this.tigerRangeMultiplier // NEW
         });
     }
     
@@ -146,6 +161,11 @@ export class Game {
             
             this.tiger.pos = new Vector2(state.tiger.pos.x, state.tiger.pos.y);
             this.tiger.incapacitated = state.tiger.incapacitated;
+            
+            // NEW: Restore Tiger range multiplier
+            if (state.tiger.tigerRangeMultiplier !== undefined) {
+                this.tiger.tigerRangeMultiplier = state.tiger.tigerRangeMultiplier;
+            }
             
             state.hunters.forEach((h, i) => {
                 if (this.hunters[i]) {
@@ -169,6 +189,8 @@ export class Game {
             this.moveHistory = state.moveHistory || [];
             this.stats = state.stats || this.stats;
             this.difficulty = state.difficulty || 3;
+            // NEW: Restore game-level multiplier
+            this.tigerRangeMultiplier = state.tigerRangeMultiplier || 1.0;
             this.huntersMoved.clear();
             
             this.updateUI();
@@ -215,10 +237,10 @@ export class Game {
         }
         
         let dist = piece.pos.distanceTo(targetPos);
-        const moveRange = piece.getMoveRange(); // NEW: Use specialized range
+        const moveRange = piece.getMoveRange(); // Use dynamic range
         
         if (piece.isTiger) {
-            // NEW: Strict clamping to exact move range
+            // Strict clamping to exact move range
             if (dist > moveRange + 0.01) {
                 const dir = targetPos.sub(piece.pos);
                 targetPos = piece.pos.add(dir.normalize().mult(moveRange));
@@ -238,7 +260,7 @@ export class Game {
             this.executeTigerTurn(targetPos);
             
         } else {
-            // NEW: Check hunter-specific move range
+            // Hunter move with specialized range
             if (dist > moveRange + 0.01) {
                 const dir = targetPos.sub(piece.pos);
                 targetPos = piece.pos.add(dir.normalize().mult(moveRange));
@@ -256,12 +278,12 @@ export class Game {
     executeTigerTurn(targetPos) {
         console.log("=== TIGER TURN START ===");
         
-        // NEW: Strict enforcement of max move distance
+        // Strict enforcement of max move distance
         const actualMoveDist = this.tiger.pos.distanceTo(targetPos);
-        if (actualMoveDist > this.tiger.getMoveRange() + 0.01) {
-            console.warn("Tiger move clamped to max range");
+        const maxAllowedRange = this.tiger.getMoveRange();
+        if (actualMoveDist > maxAllowedRange + 0.01) {
             const dir = targetPos.sub(this.tiger.pos);
-            targetPos = this.tiger.pos.add(dir.normalize().mult(this.tiger.getMoveRange()));
+            targetPos = this.tiger.pos.add(dir.normalize().mult(maxAllowedRange));
         }
         
         this.tiger.pos = targetPos.clone();
@@ -271,13 +293,12 @@ export class Game {
         setTimeout(() => {
             this.tiger.updateAnimation(this.tiger.animationEnd);
             
-            // NEW: Check for  hunters
-            const equidistant = Systems.getEquidistantHunters(this.tiger.pos, this.hunters, this.center, Systems.HAND_SPAN);
-if (equidistant.length > 1 && this.tigerAIEnabled) {
-    this.processingAction = false; // ✅ Clear flag before handling
-    this.processEquidistantChoice(equidistant);
-    return;
-}
+            const equidistant = Systems.getEquidistantHunters(this.tiger.pos, this.hunters, this.center, this.tiger.getTigerRange());
+            if (equidistant.length > 1 && this.tigerAIEnabled) {
+                this.processingAction = false; // Clear flag before handling
+                this.processEquidistantChoice(equidistant);
+                return;
+            }
             
             const landedHunter = Systems.getLandedHunter(this.tiger.pos, this.hunters, this.tiger.radius);
             
@@ -286,7 +307,7 @@ if (equidistant.length > 1 && this.tigerAIEnabled) {
                 this.processPounceChain(landedHunter);
             } else {
                 console.log("Tiger landed on empty space, checking for ROAR");
-                this.roarActive = Systems.getHuntersInPounceRange(this.tiger.pos, this.hunters, this.center, Systems.HAND_SPAN).length > 0;
+                this.roarActive = Systems.getHuntersInPounceRange(this.tiger.pos, this.hunters, this.center, this.tiger.getTigerRange()).length > 0;
                 if (this.roarActive) console.log("ROAR!");
                 
                 console.log("Tiger turn ending, switching to Hunters");
@@ -298,7 +319,6 @@ if (equidistant.length > 1 && this.tigerAIEnabled) {
         }, this.tiger.animationDuration);
     }
     
-    // NEW: Handle equidistant hunter selection
     processEquidistantChoice(hunters) {
         console.log("Multiple equidistant hunters found:", hunters.length);
         this.equidistantChoice = hunters;
@@ -315,10 +335,10 @@ if (equidistant.length > 1 && this.tigerAIEnabled) {
         }, 1500);
     }
     
-processPounceChain(initialHunter) {
-    console.log("=== Starting Pounce Chain ===");
-    this.processingAction = true; // ✅ Ensure flag is set for chain
-    initialHunter.incapacitated = true;
+    processPounceChain(initialHunter) {
+        console.log("=== Starting Pounce Chain ===");
+        this.processingAction = true; // Ensure flag is set for chain
+        initialHunter.incapacitated = true;
         this.stats.pounceChains.push({ huntersPounced: 1 });
         
         if (Systems.checkTigerVictory(this.hunters)) {
@@ -334,7 +354,8 @@ processPounceChain(initialHunter) {
     
     performNextPounce(fromPos) {
         console.log("--- Checking for next pounce ---");
-        const targets = Systems.getHuntersInPounceRange(fromPos, this.hunters, this.center, Systems.HAND_SPAN);
+        const pounceRange = this.tiger.getTigerRange(); // NEW: Use dynamic range
+        const targets = Systems.getHuntersInPounceRange(fromPos, this.hunters, this.center, pounceRange);
         
         if (!targets.length) {
             console.log("No more targets. Pounce chain ended.");
@@ -370,7 +391,7 @@ processPounceChain(initialHunter) {
     executeHunterTurn(hunter, targetPos) {
         console.log(`=== HUNTER TURN: ${this.hunters.indexOf(hunter)} moving to ${targetPos.x},${targetPos.y} ===`);
         
-        // NEW: Enforce hunter-specific move range
+        // Enforce hunter-specific move range
         const moveRange = hunter.getMoveRange();
         const actualDist = hunter.pos.distanceTo(targetPos);
         if (actualDist > moveRange + 0.01) {
@@ -384,7 +405,7 @@ processPounceChain(initialHunter) {
         setTimeout(() => {
             hunter.updateAnimation(hunter.animationEnd);
             
-            // NEW: Use specialized rescue range
+            // Use specialized rescue range
             const rescueRange = hunter.getRescueRange();
             const rescueThreshold = rescueRange > 0 ? rescueRange : hunter.radius + (this.hunters[0]?.radius || 15);
             
@@ -481,12 +502,13 @@ processPounceChain(initialHunter) {
     
     calculateBestTigerMove() {
         const possibleTargets = [];
+        const aiMoveRange = this.tiger.getTigerRange(); // NEW: Use dynamic range for AI
         const samples = 12;
         
         for (let angle = 0; angle < Math.PI * 2; angle += (Math.PI * 2) / samples) {
             const targetPos = new Vector2(
-                this.tiger.pos.x + Math.cos(angle) * Systems.HAND_SPAN,
-                this.tiger.pos.y + Math.sin(angle) * Systems.HAND_SPAN
+                this.tiger.pos.x + Math.cos(angle) * aiMoveRange,
+                this.tiger.pos.y + Math.sin(angle) * aiMoveRange
             );
             
             const maxCenterDist = Systems.CLEARING_RADIUS - this.tiger.radius;
@@ -501,11 +523,13 @@ processPounceChain(initialHunter) {
             }
             
             const dir = finalPos.sub(this.tiger.pos);
-            const clampedDist = Math.min(dir.distanceTo(new Vector2(0, 0)), Systems.HAND_SPAN);
+            const clampedDist = Math.min(dir.distanceTo(new Vector2(0, 0)), aiMoveRange);
             const normalized = clampedDist > 0 ? dir.mult(1 / dir.distanceTo(new Vector2(0, 0))) : new Vector2(0, 0);
             finalPos = this.tiger.pos.add(normalized.mult(clampedDist));
             
-            const chainScore = this.simulatePounceChain(finalPos);
+            const pounceRange = this.tiger.getTigerRange();
+            const chainScore = this.simulatePounceChain(finalPos, pounceRange);
+            
             const centerBonus = (Systems.CLEARING_RADIUS - finalPos.distanceTo(this.center)) * 0.01;
             const randomBonus = Math.random() * 0.1;
             const finalScore = chainScore + centerBonus + randomBonus;
@@ -519,8 +543,10 @@ processPounceChain(initialHunter) {
         return possibleTargets[0]?.pos || null;
     }
     
-    simulatePounceChain(targetPos) {
-        const tempTiger = new Piece(this.tiger.pos.clone(), this.tiger.color, true);
+    simulatePounceChain(targetPos, pounceRange) {
+        const tempTiger = new Piece(this.tiger.pos.clone(), this.tiger.color, true, {
+            tigerRangeMultiplier: this.tigerRangeMultiplier
+        });
         const tempHunters = this.hunters.map(h => {
             const temp = new Piece(h.pos.clone(), h.color, false, {
                 diameter: h.radius * 2,
@@ -536,6 +562,7 @@ processPounceChain(initialHunter) {
         });
         
         tempTiger.pos = targetPos.clone();
+        tempTiger.radius = this.tiger.radius; // Copy actual radius
         const landedHunter = Systems.getLandedHunter(tempTiger.pos, tempHunters, tempTiger.radius);
         
         if (!landedHunter) return 0;
@@ -545,7 +572,7 @@ processPounceChain(initialHunter) {
         landedHunter.incapacitated = true;
         
         while (true) {
-            const targets = Systems.getHuntersInPounceRange(currentPos, tempHunters, this.center, Systems.HAND_SPAN);
+            const targets = Systems.getHuntersInPounceRange(currentPos, tempHunters, this.center, pounceRange);
             const available = targets.filter(h => !h.incapacitated && !h.isRemoved);
             if (!available.length) break;
             
@@ -579,7 +606,7 @@ processPounceChain(initialHunter) {
         const [turn1, turn2, turn3] = this.moveHistory.slice(-3);
         
         for (let hunter of this.hunters) {
-            // NEW: Skip veteran hunters
+            // Skip veteran hunters
             if (hunter.incapacitated || hunter.isRemoved || hunter.isVeteran()) continue;
             
             const posInTurn1 = turn1.find(p => p.hunter === hunter);
