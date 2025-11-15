@@ -64,12 +64,19 @@ export class Game {
     }
     
     movePiece(piece, targetPos) {
-        if (this.winner || this.isAnimating()) return;
+        console.log(`movePiece called for ${piece.isTiger ? 'TIGER' : 'HUNTER'}, isAnimating: ${this.isAnimating()}`);
+        if (this.winner || this.isAnimating()) {
+            console.log("movePiece blocked: winner or animating");
+            return;
+        }
         
         const dist = piece.pos.distanceTo(targetPos);
         
         if (piece.isTiger) {
-            if (dist > Systems.HAND_SPAN) return;
+            if (dist > Systems.HAND_SPAN) {
+                console.log("Tiger move blocked: distance too far");
+                return;
+            }
             
             const maxCenterDist = Systems.CLEARING_RADIUS - piece.radius;
             if (targetPos.distanceTo(this.center) > maxCenterDist) {
@@ -80,6 +87,7 @@ export class Game {
                 );
             }
             
+            console.log("Executing Tiger turn");
             this.executeTigerTurn(targetPos);
             
         } else {
@@ -93,6 +101,7 @@ export class Game {
     }
     
     executeTigerTurn(targetPos) {
+        console.log("=== TIGER TURN START ===");
         const maxDistanceFromCenter = Systems.CLEARING_RADIUS - this.tiger.radius;
         const distanceFromCenter = targetPos.distanceTo(this.center);
         
@@ -118,9 +127,11 @@ export class Game {
                 console.log("=== TIGER LANDED ON HUNTER ===");
                 this.processPounceChain(landedHunter);
             } else {
+                console.log("Tiger landed on empty space, checking for ROAR");
                 this.roarActive = Systems.getHuntersInPounceRange(this.tiger.pos, this.hunters, this.center, Systems.HAND_SPAN).length > 0;
                 if (this.roarActive) console.log("ROAR!");
                 
+                console.log("Tiger turn ending, switching to Hunters");
                 this.turn = 'HUNTERS';
                 this.huntersMoved.clear();
                 this.processingAction = false;
@@ -133,8 +144,10 @@ export class Game {
         initialHunter.incapacitated = true;
         
         if (Systems.checkTigerVictory(this.hunters)) {
+            console.log("TIGER VICTORY!");
             this.winner = 'TIGER';
             this.processingAction = false;
+            this.updateUI();
             return;
         }
         
@@ -142,13 +155,15 @@ export class Game {
     }
     
     performNextPounce(fromPos) {
+        console.log("--- Checking for next pounce ---");
         const targets = Systems.getHuntersInPounceRange(fromPos, this.hunters, this.center, Systems.HAND_SPAN);
         
         if (!targets.length) {
-            console.log("Pounce chain ended.");
+            console.log("No more targets. Pounce chain ended.");
             this.turn = 'HUNTERS';
             this.huntersMoved.clear();
             this.processingAction = false;
+            this.updateUI();
             return;
         }
         
@@ -162,8 +177,10 @@ export class Game {
             this.tiger.updateAnimation(this.tiger.animationEnd);
             
             if (Systems.checkTigerVictory(this.hunters)) {
+                console.log("TIGER VICTORY during chain!");
                 this.winner = 'TIGER';
                 this.processingAction = false;
+                this.updateUI();
                 return;
             }
             
@@ -172,6 +189,7 @@ export class Game {
     }
     
     executeHunterTurn(hunter, targetPos) {
+        console.log(`=== HUNTER TURN: ${this.hunters.indexOf(hunter)} moving to ${targetPos.x},${targetPos.y} ===`);
         hunter.startAnimation(targetPos);
         this.processingAction = true;
         
@@ -180,22 +198,27 @@ export class Game {
             hunter.hasMoved = true;
             hunter.moveOrder = this.huntersMoved.size + 1;
             this.huntersMoved.add(hunter);
+            console.log(`Hunter moved. huntersMoved.size: ${this.huntersMoved.size}`);
             
             const rescued = this.hunters.find(h => 
                 h !== hunter && h.incapacitated && h.pos.distanceTo(hunter.pos) <= h.radius + hunter.radius
             );
             
             if (rescued) {
+                console.log("RESCUE occurred!");
                 rescued.incapacitated = false;
                 rescued.borderlandsTurns = 0;
                 rescued.hasMoved = true;
                 this.huntersMoved.add(rescued);
-                console.log("Hunter rescued! Cannot move this turn.");
+                console.log(`Rescued hunter added. huntersMoved.size: ${this.huntersMoved.size}`);
             }
             
-            // CRITICAL FIX: Recalculate total movable hunters after rescue
+            // CRITICAL FIX: Recalculate after rescue
             const totalMovable = this.hunters.filter(h => !h.incapacitated && !h.isRemoved).length;
+            console.log(`Total movable hunters: ${totalMovable}, huntersMoved.size: ${this.huntersMoved.size}`);
+            
             if (this.huntersMoved.size === totalMovable) {
+                console.log("=== HUNTER TURN ENDING ===");
                 this.recordTurnPositions();
                 this.turn = 'TIGER';
                 this.huntersMoved.clear();
@@ -204,10 +227,15 @@ export class Game {
                     h.moveOrder = null;
                 });
                 this.enforceCampingPenalty();
+                this.updateUI();
                 
-                // Trigger AI after Hunter turn ends
+                // CRITICAL: Trigger AI after Hunter turn ends
                 if (this.tigerAIEnabled && !this.winner) {
-                    setTimeout(() => this.executeTigerAI(), 500);
+                    console.log("Scheduling Tiger AI in 500ms...");
+                    setTimeout(() => {
+                        console.log("Tiger AI timeout firing!");
+                        this.executeTigerAI();
+                    }, 500);
                 }
             } else {
                 if (rescued) {
@@ -219,6 +247,7 @@ export class Game {
             if (victory.won) {
                 this.winner = 'HUNTERS';
                 this.winningHunters = victory.hunters;
+                this.updateUI();
             }
             
             this.processingAction = false;
@@ -227,7 +256,11 @@ export class Game {
     
     // Tiger AI
     executeTigerAI() {
-        if (this.winner || this.turn !== 'TIGER' || !this.tigerAIEnabled) return;
+        console.log("executeTigerAI called!");
+        if (this.winner || this.turn !== 'TIGER' || !this.tigerAIEnabled) {
+            console.log(`executeTigerAI blocked: winner=${this.winner}, turn=${this.turn}, aiEnabled=${this.tigerAIEnabled}`);
+            return;
+        }
         
         console.log("=== TIGER AI THINKING ===");
         this.aiThinking = true;
@@ -235,7 +268,7 @@ export class Game {
         
         setTimeout(() => {
             const bestMove = this.calculateBestTigerMove();
-            this.aiThinking = false;
+            this.aiThinking = false; // CRITICAL: Stop thinking before moving
             
             if (bestMove) {
                 console.log("Tiger AI moving to:", bestMove);
@@ -320,29 +353,35 @@ export class Game {
         return chainCount;
     }
     
-    updateUI() {
-        const statusDiv = document.getElementById('status');
-        const turnIndicator = document.getElementById('turn-indicator');
+    recordTurnPositions() {
+        const positions = this.hunters.map(h => ({
+            hunter: h,
+            pos: h.pos.clone(),
+            inBorderlands: Systems.isInBorderlands(h.pos, this.center)
+        }));
+        this.moveHistory.push(positions);
+        if (this.moveHistory.length > 2) this.moveHistory.shift();
+    }
+    
+    enforceCampingPenalty() {
+        if (this.moveHistory.length < 2) return;
         
-        if (this.winner) {
-            turnIndicator.textContent = `${this.winner} WINS!`;
-            turnIndicator.style.color = '#e74c3c';
-            statusDiv.innerHTML = `<span style="color: #27ae60; font-weight: bold;">Victory!</span>`;
-        } else {
-            turnIndicator.textContent = `${this.turn}'s Turn`;
-            turnIndicator.style.color = this.turn === 'TIGER' ? '#e74c3c' : '#27ae60';
+        const anyInClearing = this.hunters.some(h => 
+            !h.incapacitated && !h.isRemoved && Systems.isInClearing(h.pos, this.center)
+        );
+        if (!anyInClearing) return;
+        
+        const [turn1, turn2] = this.moveHistory.slice(-2);
+        
+        for (let hunter of this.hunters) {
+            if (hunter.incapacitated || hunter.isRemoved) continue;
             
-            if (this.turn === 'HUNTERS') {
-                const remaining = 5 - this.huntersMoved.size;
-                turnIndicator.textContent += ` (${remaining} moves left)`;
-            }
+            const posInTurn1 = turn1.find(p => p.hunter === hunter);
+            const posInTurn2 = turn2.find(p => p.hunter === hunter);
             
-            if (this.aiThinking) {
-                turnIndicator.textContent = 'TIGER is thinking...';
-            }
-            
-            if (this.tigerAIEnabled && this.turn === 'TIGER' && !this.aiThinking && !this.winner) {
-                statusDiv.textContent = "Tiger is automated. Control the Hunters.";
+            if (posInTurn1?.inBorderlands && posInTurn2?.inBorderlands) {
+                console.log(`Hunter removed for camping!`);
+                hunter.isRemoved = true;
             }
         }
     }
