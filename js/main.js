@@ -14,12 +14,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    // PASS UI ELEMENTS TO GAME CONSTRUCTOR
     const game = new Game(canvas, turnIndicator, statusDiv);
     const renderer = new Renderer(canvas);
 
     let selectedPiece = null;
     let dragPreview = null;
+    let ghostPreview = null; // NEW: Ghost preview state
     let lastTime = performance.now();
 
     canvas.addEventListener('mousedown', (e) => {
@@ -39,17 +39,46 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const hoverPos = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
+        
         if (!selectedPiece) {
-            const rect = canvas.getBoundingClientRect();
-            const hoverPos = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
             const piece = game.selectPiece(hoverPos);
             canvas.style.cursor = piece && !game.isAnimating() ? 'pointer' : 'default';
             dragPreview = null;
+            ghostPreview = null;
             return;
         }
         
-        const rect = canvas.getBoundingClientRect();
-        dragPreview = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
+        // Calculate ghost preview position
+        dragPreview = hoverPos;
+        
+        // Only calculate ghost for Hunters (Tiger is AI-controlled)
+        if (!selectedPiece.isTiger) {
+            const dir = hoverPos.sub(selectedPiece.pos);
+            const dist = dir.distanceTo(new Vector2(0, 0));
+            let targetPos = selectedPiece.pos.clone();
+            
+            if (dist > 0) {
+                // Clamp to HAND_SPAN distance
+                const clampedDist = Math.min(dist, Systems.HAND_SPAN);
+                const normalized = dir.mult(1 / dist).mult(clampedDist);
+                targetPos = selectedPiece.pos.add(normalized);
+                
+                // Clamp to borderlands boundary
+                const maxDist = Systems.CLEARING_RADIUS + Systems.BORDERLANDS_WIDTH;
+                const distanceFromCenter = targetPos.distanceTo(game.center);
+                if (distanceFromCenter > maxDist) {
+                    const angle = Math.atan2(targetPos.y - game.center.y, targetPos.x - game.center.x);
+                    targetPos = new Vector2(
+                        game.center.x + Math.cos(angle) * maxDist,
+                        game.center.y + Math.sin(angle) * maxDist
+                    );
+                }
+            }
+            
+            ghostPreview = { piece: selectedPiece, position: targetPos };
+        }
     });
 
     canvas.addEventListener('mouseup', (e) => {
@@ -62,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         selectedPiece = null;
         dragPreview = null;
+        ghostPreview = null; // Clear ghost on release
         canvas.style.cursor = 'pointer';
         game.updateUI();
     });
@@ -72,10 +102,10 @@ document.addEventListener('DOMContentLoaded', () => {
         game.reset();
         selectedPiece = null;
         dragPreview = null;
+        ghostPreview = null;
         game.updateUI();
         statusDiv.textContent = "Game reset! Tiger will move first.";
         
-        // Trigger AI on reset if Tiger starts
         if (game.tigerAIEnabled && game.turn === 'TIGER' && !game.winner) {
             setTimeout(() => {
                 console.log("Initial AI trigger from reset");
@@ -99,6 +129,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (game.roarActive && game.turn === 'TIGER') {
             renderer.drawRoarEffect(game.tiger.pos, game.hunters, game.center);
+        }
+        
+        // Draw ghost preview (before range indicator and pieces)
+        if (ghostPreview && !game.isAnimating()) {
+            renderer.drawGhostPreview(ghostPreview.piece, ghostPreview.position);
         }
         
         if (selectedPiece && !game.isAnimating()) {
@@ -134,7 +169,6 @@ document.addEventListener('DOMContentLoaded', () => {
     statusDiv.textContent = "Game ready! Tiger is automated. Control the Hunters.";
     console.log("Game initialized. AI Enabled:", game.tigerAIEnabled, "Starting turn:", game.turn);
     
-    // Trigger AI on first turn
     if (game.tigerAIEnabled && game.turn === 'TIGER' && !game.winner) {
         setTimeout(() => {
             console.log("Initial AI trigger");
