@@ -16,13 +16,17 @@ body {
     padding: 20px;
     border-radius: 10px;
     box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-    align-items: flex-start; /* ✅ Prevent vertical stretch */
+    align-items: flex-start; /* Prevent vertical stretch */
 }
 
 canvas {
     border: 2px solid #34495e;
     cursor: pointer;
     touch-action: none;
+    display: block; /* Prevent inline alignment issues */
+    width: 800px;
+    height: 800px;
+    max-width: 100%;
 }
 
 #ui {
@@ -41,14 +45,14 @@ canvas {
     min-height: 40px;
 }
 
-#difficulty-selector {
-    margin: 15px 0;
+#difficulty-selector, #tiger-range-selector {
+    margin: 10px 0;
     padding: 10px;
     background: #ecf0f1;
     border-radius: 5px;
 }
 
-#difficulty-selector label {
+#difficulty-selector label, #tiger-range-selector label {
     font-weight: bold;
     color: #34495e;
     margin-right: 10px;
@@ -56,7 +60,7 @@ canvas {
     margin-bottom: 5px;
 }
 
-#difficulty {
+#difficulty, #tigerRange {
     width: 100%;
     padding: 5px;
     border-radius: 3px;
@@ -105,15 +109,9 @@ button:hover {
     margin-top: 0;
 }
 
-canvas {
-    border: 2px solid #34495e;
-    cursor: pointer;
-    touch-action: none;
-    display: block; /* ✅ Prevent inline alignment issues */
-    width: 800px;
-    height: 800px;
-    max-width: 100%;
-    /* height: auto ← REMOVE THIS if present */
+canvas:focus {
+    outline: 2px solid #3498db;
+    outline-offset: 2px;
 }
 
 .dimmed {
