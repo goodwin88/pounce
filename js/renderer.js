@@ -140,7 +140,6 @@ export class Renderer {
             this.ctx.stroke();
             this.ctx.setLineDash([]);
             
-            // Show veteran immunity
             if (hunter.isVeteran()) {
                 this.ctx.fillStyle = '#3498db';
                 this.ctx.font = 'bold 10px Arial';
@@ -188,6 +187,30 @@ export class Renderer {
         this.ctx.restore();
     }
     
+    // ✅ METHOD IS HERE - INSIDE CLASS
+    drawPieces(pieces, gameState) {
+        pieces.forEach(p => {
+            if (!p.isTiger && p.hasMoved && !gameState.winner) {
+                this.ctx.save();
+                this.ctx.globalAlpha = 0.5;
+            }
+            
+            p.draw(this.ctx);
+            
+            if (!p.isTiger && p.hasMoved && !p.incapacitated && !p.isRemoved) {
+                this.ctx.fillStyle = '#2ecc71';
+                this.ctx.font = 'bold 14px Arial';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText('✓', p.pos.x, p.pos.y);
+                this.ctx.textAlign = 'left';
+            }
+            
+            if (!p.isTiger && p.hasMoved && !gameState.winner) {
+                this.ctx.restore();
+            }
+        });
+    }
+    
     drawStats(stats, difficultyName, rangeName) {
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
         this.ctx.fillRect(this.canvas.width - 200, 10, 190, 120);
@@ -212,6 +235,7 @@ export class Renderer {
         this.ctx.textAlign = 'left';
     }
     
+    // ✅ CALL IS HERE - INSIDE draw()
     draw(pieces, gameState = {}) {
         this.clear();
         this.drawZones();
@@ -222,23 +246,28 @@ export class Renderer {
             this.drawRoarEffect(gameState.tiger.pos, gameState.hunters, gameState.center, tigerRange);
         }
         
-        // Use dynamic pounce range
-        if ((gameState.selectedPiece?.isTiger || gameState.roarActive || gameState.turn === 'TIGER')) {
-            this.drawPounceRange(gameState.tiger.pos, gameState.hunters, gameState.center, tigerRange);
-        }
-        
         if (gameState.turn === 'HUNTERS' && !gameState.winner && gameState.gameInstance) {
             this.drawCampingWarnings(gameState.gameInstance);
+        }
+        
+        if ((gameState.selectedPiece?.isTiger || gameState.roarActive || gameState.turn === 'TIGER')) {
+            this.drawPounceRange(gameState.tiger.pos, gameState.hunters, gameState.center, tigerRange);
         }
         
         if (gameState.winner === 'HUNTERS' && gameState.winningHunters) {
             this.drawVictoryTriangle(gameState.winningHunters);
         }
         
+        if (gameState.selectedPiece) {
+            const range = gameState.selectedPiece.getMoveRange();
+            this.drawRangeIndicator(gameState.selectedPiece.pos, range);
+        }
+        
         if (gameState.ghostPreview && !gameState.isAnimating) {
             this.drawGhostPreview(gameState.ghostPreview.piece, gameState.ghostPreview.position);
         }
         
+        // ✅ THIS IS LINE 242 - call to drawPieces
         this.drawPieces(pieces, gameState);
         
         if (gameState.stats && gameState.gameInstance) {
@@ -247,4 +276,4 @@ export class Renderer {
             this.drawStats(gameState.stats, diffName, rangeName);
         }
     }
-}
+} // End of class
