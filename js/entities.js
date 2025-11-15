@@ -53,6 +53,9 @@ export class Piece {
         this.canMoveAfterBeingRescued = stats.canMoveAfterBeingRescued || false;
         this.hunterType = stats.hunterType || 'standard';
         
+        // NEW: Hunter specialization properties
+        this.hunterSpecials = stats.hunterSpecials || null;
+        
         this.borderlandsTurns = 0;
         this.hasMoved = false;
         this.isSelected = false;
@@ -65,6 +68,25 @@ export class Piece {
         this.animationStartPos = null;
         this.animationEndPos = null;
         this.animationDuration = 300;
+    }
+    
+    // NEW: Get move range based on hunter type
+    getMoveRange() {
+        if (this.isTiger) return 150;
+        const special = this.hunterSpecials?.[this.hunterType];
+        return special ? 150 * special.moveMultiplier : 150;
+    }
+    
+    // NEW: Get rescue range (medic special)
+    getRescueRange() {
+        if (this.isTiger) return 0;
+        const special = this.hunterSpecials?.[this.hunterType];
+        return special?.rescueRange || 0;
+    }
+    
+    // NEW: Check if veteran (immune to camping)
+    isVeteran() {
+        return this.hunterType === 'veteran';
     }
     
     startAnimation(targetPos) {
@@ -151,11 +173,10 @@ export class Piece {
             ctx.stroke();
         }
         
-        // NEW: Draw centered, bold hunter type letters (only for exceptional types)
-        if (!this.isTiger && !this.incapacitated && !this.isRemoved && this.hunterType !== 'standard') {
-            const letter = this.hunterType === 'scout' ? 'S' : 
-                          this.hunterType === 'veteran' ? 'V' : 
-                          this.hunterType === 'medic' ? 'M' : '';
+        // Draw hunter type symbol
+        if (!this.isTiger && !this.incapacitated && !this.isRemoved) {
+            const special = this.hunterSpecials?.[this.hunterType];
+            const letter = special?.symbol || '';
             
             if (letter) {
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
