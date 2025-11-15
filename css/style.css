@@ -21,7 +21,7 @@ body {
 canvas {
     border: 2px solid #34495e;
     cursor: pointer;
-    touch-action: none; /* Prevent default touch behaviors */
+    touch-action: none;
 }
 
 #ui {
@@ -38,6 +38,29 @@ canvas {
     font-size: 14px;
     color: #34495e;
     min-height: 40px;
+}
+
+#difficulty-selector {
+    margin: 15px 0;
+    padding: 10px;
+    background: #ecf0f1;
+    border-radius: 5px;
+}
+
+#difficulty-selector label {
+    font-weight: bold;
+    color: #34495e;
+    margin-right: 10px;
+    display: block;
+    margin-bottom: 5px;
+}
+
+#difficulty {
+    width: 100%;
+    padding: 5px;
+    border-radius: 3px;
+    border: 1px solid #bdc3c7;
+    font-size: 12px;
 }
 
 #controls {
@@ -81,13 +104,11 @@ button:hover {
     margin-top: 0;
 }
 
-/* Accessibility focus indicator */
 canvas:focus {
     outline: 2px solid #3498db;
     outline-offset: 2px;
 }
 
-/* Dimmed Hunter state */
 .dimmed {
     opacity: 0.5;
 }
