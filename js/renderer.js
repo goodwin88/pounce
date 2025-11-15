@@ -14,14 +14,12 @@ export class Renderer {
     }
     
     drawZones() {
-        // Clearing
         this.ctx.strokeStyle = '#f39c12';
         this.ctx.lineWidth = 3;
         this.ctx.beginPath();
         this.ctx.arc(this.center.x, this.center.y, Systems.CLEARING_RADIUS, 0, Math.PI * 2);
         this.ctx.stroke();
         
-        // Borderlands boundary
         this.ctx.strokeStyle = '#3498db';
         this.ctx.lineWidth = 2;
         this.ctx.beginPath();
@@ -29,7 +27,6 @@ export class Renderer {
                      Systems.CLEARING_RADIUS + Systems.BORDERLANDS_WIDTH, 0, Math.PI * 2);
         this.ctx.stroke();
         
-        // Zone labels
         this.ctx.fillStyle = '#f39c12';
         this.ctx.font = 'bold 16px Arial';
         this.ctx.fillText('Clearing', 10, 30);
@@ -39,21 +36,18 @@ export class Renderer {
     }
     
     drawRangeIndicator(pos, range) {
-        // Draw the movement range ring
         this.ctx.strokeStyle = 'rgba(241, 196, 15, 0.6)';
         this.ctx.lineWidth = 4;
         this.ctx.beginPath();
         this.ctx.arc(pos.x, pos.y, range, 0, Math.PI * 2);
         this.ctx.stroke();
         
-        // Range label
         this.ctx.fillStyle = '#f39c12';
         this.ctx.font = 'bold 14px Arial';
         this.ctx.fillText(`Move: ${range}px`, 10, 80);
     }
     
     drawPounceRange(tigerPos, hunters, center) {
-        // Visual pounce range (red dashed circle)
         this.ctx.strokeStyle = 'rgba(231, 76, 60, 0.3)';
         this.ctx.lineWidth = 2;
         this.ctx.setLineDash([2, 4]);
@@ -62,7 +56,6 @@ export class Renderer {
         this.ctx.stroke();
         this.ctx.setLineDash([]);
         
-        // Label
         this.ctx.fillStyle = '#e74c3c';
         this.ctx.font = '12px Arial';
         this.ctx.fillText('Pounce: 150px', 10, 100);
@@ -99,6 +92,7 @@ export class Renderer {
         this.ctx.textAlign = 'left';
     }
     
+    // IMPROVED: Draw victory triangle with enhanced visual feedback
     drawVictoryTriangle(hunters) {
         if (!hunters || hunters.length !== 3) return;
         
@@ -113,22 +107,67 @@ export class Renderer {
         this.ctx.strokeStyle = `rgba(39, 174, 96, ${pulse + 0.3})`;
         this.ctx.lineWidth = 4;
         this.ctx.stroke();
+        
+        // NEW: Highlight Hunters that are in range
+        hunters.forEach(h => {
+            if (Systems.distance(h.pos, this.center) <= Systems.HAND_SPAN) {
+                this.ctx.strokeStyle = '#2ecc71';
+                this.ctx.lineWidth = 3;
+                this.ctx.beginPath();
+                this.ctx.arc(h.pos.x, h.pos.y, h.radius + 8, 0, Math.PI * 2);
+                this.ctx.stroke();
+            }
+        });
+        
+        // NEW: Victory message overlay
+        this.ctx.fillStyle = '#2ecc71';
+        this.ctx.font = 'bold 48px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('TRIANGLE COMPLETE!', this.canvas.width / 2, 100);
+        this.ctx.textAlign = 'left';
     }
     
-    // NEW: Draw ghost preview
+    // NEW: Draw camping warnings
+    drawCampingWarnings(game) {
+        game.hunters.forEach(hunter => {
+            const warningLevel = game.getCampingWarning(hunter);
+            if (warningLevel === 0) return;
+            
+            const pulse = Math.sin(Date.now() / 150) * 0.3 + 0.7;
+            const color = warningLevel === 2 ? '#e67e22' : '#f39c12'; // Orange vs yellow
+            
+            this.ctx.strokeStyle = color;
+            this.ctx.lineWidth = 3;
+            this.ctx.setLineDash([4, 4]);
+            this.ctx.beginPath();
+            this.ctx.arc(hunter.pos.x, hunter.pos.y, hunter.radius + 10, 0, Math.PI * 2);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+            
+            // Warning text
+            this.ctx.fillStyle = color;
+            this.ctx.font = 'bold 10px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText(
+                warningLevel === 2 ? 'REMOVE NEXT TURN!' : 'Camp Warning',
+                hunter.pos.x,
+                hunter.pos.y - hunter.radius - 15
+            );
+            this.ctx.textAlign = 'left';
+        });
+    }
+    
     drawGhostPreview(piece, ghostPos) {
         if (!piece || !ghostPos) return;
         
         this.ctx.save();
-        this.ctx.globalAlpha = 0.35; // Ghostly transparency
+        this.ctx.globalAlpha = 0.35;
         
-        // Draw the ghost piece
         this.ctx.fillStyle = piece.color;
         this.ctx.beginPath();
         this.ctx.arc(ghostPos.x, ghostPos.y, piece.radius, 0, Math.PI * 2);
         this.ctx.fill();
         
-        // Draw dashed white outline
         this.ctx.strokeStyle = '#ffffff';
         this.ctx.lineWidth = 2;
         this.ctx.setLineDash([4, 4]);
@@ -137,7 +176,6 @@ export class Renderer {
         this.ctx.stroke();
         this.ctx.setLineDash([]);
         
-        // Add "preview" label
         this.ctx.fillStyle = '#ffffff';
         this.ctx.font = '10px Arial';
         this.ctx.textAlign = 'center';
@@ -147,32 +185,87 @@ export class Renderer {
         this.ctx.restore();
     }
     
+    // IMPROVED: Draw pieces with dimmed moved Hunters
+    drawPieces(pieces, gameState) {
+        pieces.forEach(p => {
+            // Dim moved Hunters
+            if (!p.isTiger && p.hasMoved && !gameState.winner) {
+                this.ctx.save();
+                this.ctx.globalAlpha = 0.5; // 50% opacity for moved Hunters
+            }
+            
+            p.draw(this.ctx);
+            
+            // Draw checkmark on moved Hunters
+            if (!p.isTiger && p.hasMoved && !p.incapacitated && !p.isRemoved) {
+                this.ctx.fillStyle = '#2ecc71';
+                this.ctx.font = 'bold 14px Arial';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText('✓', p.pos.x, p.pos.y);
+                this.ctx.textAlign = 'left';
+            }
+            
+            if (!p.isTiger && p.hasMoved && !gameState.winner) {
+                this.ctx.restore();
+            }
+        });
+    }
+    
     draw(pieces, gameState = {}) {
         this.clear();
         this.drawZones();
         
-        // Draw pounce range during Tiger turn
-        if ((gameState.selectedPiece?.isTiger || gameState.roarActive || gameState.turn === 'TIGER')) {
-            this.drawPounceRange(gameState.tiger.pos, gameState.hunters, this.center);
+        if (gameState.roarActive && gameState.turn === 'TIGER') {
+            this.drawRoarEffect(gameState.tiger.pos, gameState.hunters, this.center);
+        }
+        
+        // Draw camping warnings BEFORE other elements
+        if (gameState.turn === 'HUNTERS' && !gameState.winner) {
+            this.drawCampingWarnings(gameState);
         }
         
         if (gameState.winner === 'HUNTERS' && gameState.winningHunters) {
             this.drawVictoryTriangle(gameState.winningHunters);
         }
         
-        if (gameState.roarActive && gameState.turn === 'TIGER') {
-            this.drawRoarEffect(gameState.tiger.pos, gameState.hunters, this.center);
+        if ((gameState.selectedPiece?.isTiger || gameState.roarActive || gameState.turn === 'TIGER')) {
+            this.drawPounceRange(gameState.tiger.pos, gameState.hunters, this.center);
         }
         
         if (gameState.selectedPiece) {
             this.drawRangeIndicator(gameState.selectedPiece.pos, Systems.HAND_SPAN);
         }
         
-        // Draw ghost preview BEFORE regular pieces
         if (gameState.ghostPreview && !gameState.isAnimating) {
             this.drawGhostPreview(gameState.ghostPreview.piece, gameState.ghostPreview.position);
         }
         
-        pieces.forEach(p => p.draw(this.ctx));
+        this.drawPieces(pieces, gameState);
+        
+        // Draw statistics overlay
+        if (gameState.stats) {
+            this.drawStats(gameState.stats);
+        }
+    }
+    
+    // NEW: Draw statistics
+    drawStats(stats) {
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.fillRect(this.canvas.width - 200, 10, 190, 100);
+        
+        this.ctx.fillStyle = '#ecf0f1';
+        this.ctx.font = '12px Arial';
+        this.ctx.textAlign = 'right';
+        let y = 30;
+        this.ctx.fillText(`Total Moves: ${stats.totalMoves}`, this.canvas.width - 20, y);
+        y += 15;
+        this.ctx.fillText(`Pounce Chains: ${stats.pounceChains.length}`, this.canvas.width - 20, y);
+        y += 15;
+        this.ctx.fillText(`Camping Removals: ${stats.campingRemovals}`, this.canvas.width - 20, y);
+        y += 15;
+        this.ctx.fillText(`Avg Chain Length: ${stats.pounceChains.length > 0 
+            ? (stats.pounceChains.reduce((a, c) => a + c.huntersPounced, 0) / stats.pounceChains.length).toFixed(1)
+            : 0}`, this.canvas.width - 20, y);
+        this.ctx.textAlign = 'left';
     }
 }
