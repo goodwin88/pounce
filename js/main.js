@@ -25,10 +25,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let ghostPreview = null;
     let lastTime = performance.now();
     
-    // NEW: Keyboard navigation state
     let keyboardSelectedHunterIndex = -1;
 
-    // NEW: Touch support
+    // Touch support
     canvas.addEventListener('touchstart', (e) => {
         e.preventDefault();
         const touch = e.touches[0];
@@ -55,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
         canvas.dispatchEvent(mouseEvent);
     });
 
-    // NEW: Keyboard support (Tab to cycle, Arrow keys to move ghost)
+    // Keyboard support
     document.addEventListener('keydown', (e) => {
         if (game.winner || game.isAnimating()) return;
         
@@ -101,7 +100,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const normalized = dist > 0 ? newPos.sub(selectedPiece.pos).mult(1 / dist).mult(clampedDist) : new Vector2(0, 0);
                 const targetPos = selectedPiece.pos.add(normalized);
                 
-                // Clamp to borderlands
                 const maxDist = Systems.CLEARING_RADIUS + Systems.BORDERLANDS_WIDTH;
                 if (targetPos.distanceTo(game.center) > maxDist) {
                     const angle = Math.atan2(targetPos.y - game.center.y, targetPos.x - game.center.x);
@@ -124,7 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (piece) {
             selectedPiece = piece;
-            keyboardSelectedHunterIndex = -1; // Reset keyboard selection
+            keyboardSelectedHunterIndex = -1;
             canvas.style.cursor = 'grabbing';
             const movesLeft = game.turn === 'HUNTERS' ? ` (${5 - game.huntersMoved.size} moves left)` : '';
             statusDiv.textContent = `${piece.isTiger ? 'TIGER' : 'HUNTER'} selected${movesLeft}. Click within yellow ring.`;
@@ -223,7 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // NEW: Save game
+    // Save game
     saveBtn.addEventListener('click', () => {
         const state = game.getState();
         localStorage.setItem('pounceSaveGame', state);
@@ -231,7 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => game.updateUI(), 2000);
     });
 
-    // NEW: Load game
+    // Load game
     loadBtn.addEventListener('click', () => {
         const state = localStorage.getItem('pounceSaveGame');
         if (state) {
@@ -293,6 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderer.drawRangeIndicator(selectedPiece.pos, Systems.HAND_SPAN);
         }
         
+        // FIX: Pass game instance to renderer
         renderer.draw(game.getAllPieces(), {
             winner: game.winner,
             winningHunters: game.winningHunters,
@@ -301,7 +300,8 @@ document.addEventListener('DOMContentLoaded', () => {
             hunters: game.hunters,
             tiger: game.tiger,
             turn: game.turn,
-            stats: game.stats
+            stats: game.stats,
+            gameInstance: game // <-- ADD THIS
         });
         
         if (selectedPiece && dragPreview && !game.isAnimating()) {
@@ -319,7 +319,6 @@ document.addEventListener('DOMContentLoaded', () => {
         requestAnimationFrame(gameLoop);
     }
 
-    // Initial setup
     game.updateUI();
     statusDiv.textContent = "Game ready! Tiger is automated. Control the Hunters. (Tab to cycle, Arrows to move)";
     console.log("Game initialized. AI Enabled:", game.tigerAIEnabled, "Starting turn:", game.turn);
