@@ -47,11 +47,11 @@ export class Piece {
         this.incapacitated = false;
         this.isRemoved = false;
         
-        // NEW: Variable stats with defaults
         this.radius = isTiger ? 30 : (stats.diameter ? stats.diameter / 2 : 15);
         this.borderlandsTolerance = stats.borderlandsTolerance !== undefined ? stats.borderlandsTolerance : 3;
         this.canMoveAfterRescue = stats.canMoveAfterRescue || false;
         this.canMoveAfterBeingRescued = stats.canMoveAfterBeingRescued || false;
+        this.hunterType = stats.hunterType || 'standard';
         
         this.borderlandsTurns = 0;
         this.hasMoved = false;
@@ -59,10 +59,6 @@ export class Piece {
         this.isVictoryPiece = false;
         this.moveOrder = null;
         
-        // Visual indicator for special abilities
-        this.hunterType = stats.hunterType || 'standard';
-        
-        // Animation properties
         this.isAnimating = false;
         this.animationStart = null;
         this.animationEnd = null;
@@ -127,29 +123,6 @@ export class Piece {
             ctx.stroke();
         }
         
-        // NEW: Draw Hunter type indicator
-        if (!this.isTiger && !this.incapacitated && !this.isRemoved) {
-            if (this.hunterType === 'scout') {
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-                ctx.font = 'bold 10px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('S', drawPos.x, drawPos.y + 3);
-                ctx.textAlign = 'left';
-            } else if (this.hunterType === 'medic') {
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-                ctx.font = 'bold 10px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('M', drawPos.x, drawPos.y + 3);
-                ctx.textAlign = 'left';
-            } else if (this.hunterType === 'veteran') {
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-                ctx.font = 'bold 10px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('V', drawPos.x, drawPos.y + 3);
-                ctx.textAlign = 'left';
-            }
-        }
-        
         const color = this.incapacitated ? '#333333' : this.color;
         ctx.fillStyle = color;
         ctx.beginPath();
@@ -178,6 +151,23 @@ export class Piece {
             ctx.stroke();
         }
         
+        // NEW: Draw centered, bold hunter type letters (only for exceptional types)
+        if (!this.isTiger && !this.incapacitated && !this.isRemoved && this.hunterType !== 'standard') {
+            const letter = this.hunterType === 'scout' ? 'S' : 
+                          this.hunterType === 'veteran' ? 'V' : 
+                          this.hunterType === 'medic' ? 'M' : '';
+            
+            if (letter) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.font = `bold ${this.radius}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(letter, drawPos.x, drawPos.y);
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'alphabetic';
+            }
+        }
+        
         if (this.hasMoved && !this.incapacitated && !this.isRemoved && this.moveOrder) {
             ctx.fillStyle = 'white';
             ctx.font = 'bold 12px Arial';
@@ -185,6 +175,7 @@ export class Piece {
             ctx.textBaseline = 'middle';
             ctx.fillText(this.moveOrder, drawPos.x, drawPos.y);
             ctx.textAlign = 'left';
+            ctx.textBaseline = 'alphabetic';
         }
     }
 }
