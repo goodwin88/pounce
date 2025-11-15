@@ -73,6 +73,11 @@ document.addEventListener('DOMContentLoaded', () => {
         dragPreview = null;
         game.updateUI();
         statusDiv.textContent = "Game reset! Click the RED TIGER to start.";
+        
+        // Trigger AI if it's Tiger's turn after reset
+        if (game.tigerAIEnabled && game.turn === 'TIGER' && !game.winner) {
+            setTimeout(() => game.executeTigerAI(), 500);
+        }
     });
 
     function gameLoop() {
@@ -120,8 +125,14 @@ document.addEventListener('DOMContentLoaded', () => {
         requestAnimationFrame(gameLoop);
     }
 
-    // Initial UI setup
+    // Initial setup
     game.updateUI();
     statusDiv.textContent = "Game ready! Tiger is automated. Control the Hunters.";
+    
+    // CRITICAL: Trigger AI on first turn if Tiger starts
+    if (game.tigerAIEnabled && game.turn === 'TIGER' && !game.winner) {
+        setTimeout(() => game.executeTigerAI(), 500);
+    }
+    
     gameLoop();
 });
