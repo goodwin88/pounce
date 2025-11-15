@@ -5,20 +5,19 @@ export const CLEARING_RADIUS = 300;
 export const BORDERLANDS_WIDTH = HAND_SPAN;
 
 export const DIFFICULTY_LEVELS = {
-    1: { name: '⭐ Beginner', multiplier: 0.2 },
-    2: { name: '⭐⭐ Easy', multiplier: 0.4 },
-    3: { name: '⭐⭐⭐ Normal', multiplier: 0.6 },
-    4: { name: '⭐⭐⭐⭐ Hard', multiplier: 0.8 },
-    5: { name: '⭐⭐⭐⭐⭐ Expert', multiplier: 1.0 }
+    1: { name: 'Massive', pct: 100 },
+    2: { name: 'Large', pct: 80 },
+    3: { name: 'Normal', pct: 60 },
+    4: { name: 'Small', pct: 40 },
+    5: { name: 'Tiny', pct: 20 }
 };
 
-// NEW: Tiger range multiplier constants
 export const TIGER_RANGE_MULTIPLIERS = {
-    0.5: { name: 'Short', multiplier: 0.5 },
-    0.7: { name: 'Compact', multiplier: 0.7 },
-    1.0: { name: 'Standard', multiplier: 1.0 },
-    1.3: { name: 'Long', multiplier: 1.3 },
-    1.5: { name: 'Extended', multiplier: 1.5 }
+    0.5: { name: 'Sluggish' },
+    0.7: { name: 'Compact' },
+    1.0: { name: 'Standard' },
+    1.3: { name: 'Long' },
+    1.5: { name: 'Extended' }
 };
 
 export const HUNTER_SPECIALS = {
@@ -53,7 +52,6 @@ export function getHuntersInPounceRange(fromPos, hunters, center, range) {
         .filter(h => {
             if (h.incapacitated || h.isRemoved) return false;
             if (!isInClearing(h.pos, center)) return false;
-            
             const dist = distance(fromPos, h.pos);
             return dist <= range;
         })
@@ -61,11 +59,8 @@ export function getHuntersInPounceRange(fromPos, hunters, center, range) {
 }
 
 export function getEquidistantHunters(fromPos, hunters, center, range) {
-    if (hunters.length === 0) return [];
-    
     const sorted = getHuntersInPounceRange(fromPos, hunters, center, range);
     if (sorted.length < 2) return [];
-    
     const firstDist = distance(fromPos, sorted[0].pos);
     return sorted.filter(h => Math.abs(distance(fromPos, h.pos) - firstDist) < 1);
 }
@@ -83,7 +78,6 @@ export function checkHunterVictory(tiger, hunters, center) {
     const activeInClearing = hunters.filter(h => 
         !h.incapacitated && !h.isRemoved && isInClearing(h.pos, center)
     );
-    
     if (activeInClearing.length < 3) return { won: false };
     
     for (let i = 0; i < activeInClearing.length - 2; i++) {
@@ -91,17 +85,13 @@ export function checkHunterVictory(tiger, hunters, center) {
             for (let k = j + 1; k < activeInClearing.length; k++) {
                 const combo = [activeInClearing[i], activeInClearing[j], activeInClearing[k]];
                 const vertices = combo.map(h => h.pos);
-                
-                const allInRange = combo.every(h => distance(tiger.pos, h.pos) <= HAND_SPAN);
-                if (!allInRange) continue;
-                
-                if (isPointInTriangle(tiger.pos, vertices)) {
+                if (combo.every(h => distance(tiger.pos, h.pos) <= HAND_SPAN) && 
+                    isPointInTriangle(tiger.pos, vertices)) {
                     return { won: true, hunters: combo };
                 }
             }
         }
     }
-    
     return { won: false };
 }
 
