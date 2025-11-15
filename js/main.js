@@ -8,6 +8,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const turnIndicator = document.getElementById('turn-indicator');
     const statusDiv = document.getElementById('status');
     const resetBtn = document.getElementById('reset-btn');
+    const saveBtn = document.getElementById('save-btn');
+    const loadBtn = document.getElementById('load-btn');
+    const statsDiv = document.getElementById('stats-display');
 
     if (!canvas) {
         console.error('CRITICAL ERROR: Canvas element not found!');
@@ -21,6 +24,95 @@ document.addEventListener('DOMContentLoaded', () => {
     let dragPreview = null;
     let ghostPreview = null;
     let lastTime = performance.now();
+    
+    // NEW: Keyboard navigation state
+    let keyboardSelectedHunterIndex = -1;
+
+    // NEW: Touch support
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousedown', {
+            clientX: touch.clientX,
+            clientY: touch.clientY
+        });
+        canvas.dispatchEvent(mouseEvent);
+    });
+
+    canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousemove', {
+            clientX: touch.clientX,
+            clientY: touch.clientY
+        });
+        canvas.dispatchEvent(mouseEvent);
+    });
+
+    canvas.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        const mouseEvent = new MouseEvent('mouseup', {});
+        canvas.dispatchEvent(mouseEvent);
+    });
+
+    // NEW: Keyboard support (Tab to cycle, Arrow keys to move ghost)
+    document.addEventListener('keydown', (e) => {
+        if (game.winner || game.isAnimating()) return;
+        
+        if (e.key === 'Tab' && game.turn === 'HUNTERS') {
+            e.preventDefault();
+            const availableHunters = game.hunters.filter(h => 
+                !h.incapacitated && !h.isRemoved && !h.hasMoved
+            );
+            
+            if (availableHunters.length === 0) return;
+            
+            keyboardSelectedHunterIndex = (keyboardSelectedHunterIndex + 1) % availableHunters.length;
+            selectedPiece = availableHunters[keyboardSelectedHunterIndex];
+            canvas.style.cursor = 'grabbing';
+            const movesLeft = ` (${5 - game.huntersMoved.size} moves left)`;
+            statusDiv.textContent = `HUNTER ${game.hunters.indexOf(selectedPiece)} selected${movesLeft}. Use arrow keys to move.`;
+        }
+        
+        if (selectedPiece && !selectedPiece.isTiger) {
+            const step = 10;
+            let dx = 0, dy = 0;
+            
+            switch(e.key) {
+                case 'ArrowUp': dy = -step; break;
+                case 'ArrowDown': dy = step; break;
+                case 'ArrowLeft': dx = -step; break;
+                case 'ArrowRight': dx = step; break;
+                case 'Enter': 
+                    if (ghostPreview) {
+                        game.movePiece(selectedPiece, ghostPreview.position);
+                        selectedPiece = null;
+                        ghostPreview = null;
+                        keyboardSelectedHunterIndex = -1;
+                    }
+                    return;
+            }
+            
+            if (dx !== 0 || dy !== 0) {
+                e.preventDefault();
+                const newPos = selectedPiece.pos.add(new Vector2(dx, dy));
+                const dist = selectedPiece.pos.distanceTo(newPos);
+                const clampedDist = Math.min(dist, Systems.HAND_SPAN);
+                const normalized = dist > 0 ? newPos.sub(selectedPiece.pos).mult(1 / dist).mult(clampedDist) : new Vector2(0, 0);
+                const targetPos = selectedPiece.pos.add(normalized);
+                
+                // Clamp to borderlands
+                const maxDist = Systems.CLEARING_RADIUS + Systems.BORDERLANDS_WIDTH;
+                if (targetPos.distanceTo(game.center) > maxDist) {
+                    const angle = Math.atan2(targetPos.y - game.center.y, targetPos.x - game.center.x);
+                    targetPos.x = game.center.x + Math.cos(angle) * maxDist;
+                    targetPos.y = game.center.y + Math.sin(angle) * maxDist;
+                }
+                
+                ghostPreview = { piece: selectedPiece, position: targetPos };
+            }
+        }
+    });
 
     canvas.addEventListener('mousedown', (e) => {
         if (game.winner || game.isAnimating()) return;
@@ -32,6 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (piece) {
             selectedPiece = piece;
+            keyboardSelectedHunterIndex = -1; // Reset keyboard selection
             canvas.style.cursor = 'grabbing';
             const movesLeft = game.turn === 'HUNTERS' ? ` (${5 - game.huntersMoved.size} moves left)` : '';
             statusDiv.textContent = `${piece.isTiger ? 'TIGER' : 'HUNTER'} selected${movesLeft}. Click within yellow ring.`;
@@ -50,20 +143,16 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        // Calculate ghost preview position (clamped to range & zone)
         dragPreview = hoverPos;
         
-        // CRITICAL: For Hunters, calculate valid target even if cursor is out of range
         if (!selectedPiece.isTiger) {
             const dir = hoverPos.sub(selectedPiece.pos);
             const dist = dir.distanceTo(new Vector2(0, 0));
             
-            // Clamp to HAND_SPAN range, but keep direction
             const clampedDist = Math.min(dist, Systems.HAND_SPAN);
             const normalized = dist > 0 ? dir.mult(1 / dist).mult(clampedDist) : new Vector2(0, 0);
             const targetPos = selectedPiece.pos.add(normalized);
             
-            // Clamp to borderlands boundary
             const maxDist = Systems.CLEARING_RADIUS + Systems.BORDERLANDS_WIDTH;
             const distanceFromCenter = targetPos.distanceTo(game.center);
             let finalPos = targetPos;
@@ -85,18 +174,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const rect = canvas.getBoundingClientRect();
         const rawTargetPos = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
         
-        // Calculate clamped target position for Hunters
         let targetPos = rawTargetPos;
         if (!selectedPiece.isTiger) {
             const dir = rawTargetPos.sub(selectedPiece.pos);
             const dist = dir.distanceTo(new Vector2(0, 0));
             
-            // Clamp to max range
             const clampedDist = Math.min(dist, Systems.HAND_SPAN);
             const normalized = dist > 0 ? dir.mult(1 / dist).mult(clampedDist) : new Vector2(0, 0);
             targetPos = selectedPiece.pos.add(normalized);
             
-            // Clamp to borderlands boundary
             const maxDist = Systems.CLEARING_RADIUS + Systems.BORDERLANDS_WIDTH;
             const distanceFromCenter = targetPos.distanceTo(game.center);
             if (distanceFromCenter > maxDist) {
@@ -113,6 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedPiece = null;
         dragPreview = null;
         ghostPreview = null;
+        keyboardSelectedHunterIndex = -1;
         canvas.style.cursor = 'pointer';
         game.updateUI();
     });
@@ -124,6 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedPiece = null;
         dragPreview = null;
         ghostPreview = null;
+        keyboardSelectedHunterIndex = -1;
         game.updateUI();
         statusDiv.textContent = "Game reset! Tiger will move first.";
         
@@ -134,6 +222,51 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 500);
         }
     });
+
+    // NEW: Save game
+    saveBtn.addEventListener('click', () => {
+        const state = game.getState();
+        localStorage.setItem('pounceSaveGame', state);
+        statusDiv.textContent = "Game saved!";
+        setTimeout(() => game.updateUI(), 2000);
+    });
+
+    // NEW: Load game
+    loadBtn.addEventListener('click', () => {
+        const state = localStorage.getItem('pounceSaveGame');
+        if (state) {
+            if (game.loadState(state)) {
+                statusDiv.textContent = "Game loaded!";
+                selectedPiece = null;
+                dragPreview = null;
+                ghostPreview = null;
+                keyboardSelectedHunterIndex = -1;
+                setTimeout(() => game.updateUI(), 2000);
+            } else {
+                statusDiv.textContent = "Failed to load game!";
+            }
+        } else {
+            statusDiv.textContent = "No saved game found!";
+        }
+    });
+
+    function updateStatsDisplay() {
+        if (!statsDiv) return;
+        
+        const s = game.stats;
+        const avgChain = s.pounceChains.length > 0 
+            ? (s.pounceChains.reduce((a, c) => a + c.huntersPounced, 0) / s.pounceChains.length).toFixed(1)
+            : 0;
+            
+        statsDiv.innerHTML = `
+            <strong>Statistics:</strong><br>
+            Total Moves: ${s.totalMoves}<br>
+            Pounce Chains: ${s.pounceChains.length}<br>
+            Avg Chain: ${avgChain}<br>
+            Camping Removals: ${s.campingRemovals}<br>
+            Triangles Formed: ${s.triangleForms}
+        `;
+    }
 
     function gameLoop() {
         const currentTime = performance.now();
@@ -152,7 +285,6 @@ document.addEventListener('DOMContentLoaded', () => {
             renderer.drawRoarEffect(game.tiger.pos, game.hunters, game.center);
         }
         
-        // Draw ghost preview (before range indicator)
         if (ghostPreview && !game.isAnimating()) {
             renderer.drawGhostPreview(ghostPreview.piece, ghostPreview.position);
         }
@@ -168,7 +300,8 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedPiece: selectedPiece,
             hunters: game.hunters,
             tiger: game.tiger,
-            turn: game.turn
+            turn: game.turn,
+            stats: game.stats
         });
         
         if (selectedPiece && dragPreview && !game.isAnimating()) {
@@ -182,12 +315,13 @@ document.addEventListener('DOMContentLoaded', () => {
             renderer.ctx.setLineDash([]);
         }
         
+        updateStatsDisplay();
         requestAnimationFrame(gameLoop);
     }
 
     // Initial setup
     game.updateUI();
-    statusDiv.textContent = "Game ready! Tiger is automated. Control the Hunters.";
+    statusDiv.textContent = "Game ready! Tiger is automated. Control the Hunters. (Tab to cycle, Arrows to move)";
     console.log("Game initialized. AI Enabled:", game.tigerAIEnabled, "Starting turn:", game.turn);
     
     if (game.tigerAIEnabled && game.turn === 'TIGER' && !game.winner) {
