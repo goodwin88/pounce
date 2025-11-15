@@ -187,7 +187,6 @@ export class Renderer {
         this.ctx.restore();
     }
     
-    // ✅ METHOD IS HERE - INSIDE CLASS
     drawPieces(pieces, gameState) {
         pieces.forEach(p => {
             if (!p.isTiger && p.hasMoved && !gameState.winner) {
@@ -211,6 +210,21 @@ export class Renderer {
         });
     }
     
+    // NEW: Draw terrain obstacle
+    drawTerrain(terrain) {
+        if (!terrain) return;
+        
+        this.ctx.save();
+        this.ctx.translate(terrain.center.x, terrain.center.y);
+        this.ctx.rotate(terrain.angle);
+        this.ctx.fillStyle = '#666666';
+        this.ctx.strokeStyle = '#333333';
+        this.ctx.lineWidth = 2;
+        this.ctx.fillRect(-terrain.width / 2, -terrain.height / 2, terrain.width, terrain.height);
+        this.ctx.strokeRect(-terrain.width / 2, -terrain.height / 2, terrain.width, terrain.height);
+        this.ctx.restore();
+    }
+    
     drawStats(stats, difficultyName, rangeName) {
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
         this.ctx.fillRect(this.canvas.width - 200, 10, 190, 120);
@@ -219,9 +233,9 @@ export class Renderer {
         this.ctx.font = '12px Arial';
         this.ctx.textAlign = 'right';
         let y = 30;
-        this.ctx.fillText(`Difficulty: ${difficultyName}`, this.canvas.width - 20, y);
+        this.ctx.fillText(`Size: ${difficultyName}`, this.canvas.width - 20, y);
         y += 15;
-        this.ctx.fillText(`Tiger Range: ${rangeName}`, this.canvas.width - 20, y);
+        this.ctx.fillText(`Reach: ${rangeName}`, this.canvas.width - 20, y);
         y += 15;
         this.ctx.fillText(`Total Moves: ${stats.totalMoves}`, this.canvas.width - 20, y);
         y += 15;
@@ -230,12 +244,11 @@ export class Renderer {
         this.ctx.fillText(`Camping Removals: ${stats.campingRemovals}`, this.canvas.width - 20, y);
         y += 15;
         this.ctx.fillText(`Avg Chain Length: ${stats.pounceChains.length > 0 
-            ? (stats.pounceChains.reduce((a, c) => a + c.huntersPounced, 0) / stats.pounceChains.length).toFixed(1)
+            ? (stats.pounceChains.reduce((a, c) => a + c.huntersPounced, 0) / s.pounceChains.length).toFixed(1)
             : 0}`, this.canvas.width - 20, y);
         this.ctx.textAlign = 'left';
     }
     
-    // ✅ CALL IS HERE - INSIDE draw()
     draw(pieces, gameState = {}) {
         this.clear();
         this.drawZones();
@@ -246,16 +259,22 @@ export class Renderer {
             this.drawRoarEffect(gameState.tiger.pos, gameState.hunters, gameState.center, tigerRange);
         }
         
-        if (gameState.turn === 'HUNTERS' && !gameState.winner && gameState.gameInstance) {
-            this.drawCampingWarnings(gameState.gameInstance);
-        }
-        
+        // Use dynamic pounce range
         if ((gameState.selectedPiece?.isTiger || gameState.roarActive || gameState.turn === 'TIGER')) {
             this.drawPounceRange(gameState.tiger.pos, gameState.hunters, gameState.center, tigerRange);
         }
         
+        if (gameState.turn === 'HUNTERS' && !gameState.winner && gameState.gameInstance) {
+            this.drawCampingWarnings(gameState.gameInstance);
+        }
+        
         if (gameState.winner === 'HUNTERS' && gameState.winningHunters) {
             this.drawVictoryTriangle(gameState.winningHunters);
+        }
+        
+        // NEW: Draw terrain
+        if (gameState.terrain) {
+            this.drawTerrain(gameState.terrain);
         }
         
         if (gameState.selectedPiece) {
@@ -267,7 +286,6 @@ export class Renderer {
             this.drawGhostPreview(gameState.ghostPreview.piece, gameState.ghostPreview.position);
         }
         
-        // ✅ THIS IS LINE 242 - call to drawPieces
         this.drawPieces(pieces, gameState);
         
         if (gameState.stats && gameState.gameInstance) {
@@ -276,4 +294,4 @@ export class Renderer {
             this.drawStats(gameState.stats, diffName, rangeName);
         }
     }
-} // End of class
+}
