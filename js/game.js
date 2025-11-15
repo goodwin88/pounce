@@ -10,7 +10,6 @@ export class Game {
         this.reset();
         this.tigerAIEnabled = true;
         
-        // NEW: Statistics tracking
         this.stats = {
             totalMoves: 0,
             pounceChains: [],
@@ -24,14 +23,32 @@ export class Game {
         
         this.hunters = [];
         const angleStep = (Math.PI * 2) / 5;
+        
+        // NEW: Random angular offset for initial placement
+        const randomOffset = Math.random() * Math.PI * 2;
+        
+        // NEW: Define Hunter stat profiles
+        const hunterProfiles = [
+            { diameter: 25, borderlandsTolerance: 4, canMoveAfterRescue: false, canMoveAfterBeingRescued: false, hunterType: 'standard' },
+            { diameter: 20, borderlandsTolerance: 2, canMoveAfterRescue: true, canMoveAfterBeingRescued: true, hunterType: 'scout' },
+            { diameter: 30, borderlandsTolerance: 5, canMoveAfterRescue: false, canMoveAfterBeingRescued: false, hunterType: 'veteran' },
+            { diameter: 18, borderlandsTolerance: 3, canMoveAfterRescue: true, canMoveAfterBeingRescued: false, hunterType: 'medic' },
+            { diameter: 22, borderlandsTolerance: 3, canMoveAfterRescue: false, canMoveAfterBeingRescued: true, hunterType: 'standard' }
+        ];
+        
+        // Shuffle profiles randomly
+        const shuffledProfiles = hunterProfiles.sort(() => Math.random() - 0.5);
+        
         for (let i = 0; i < 5; i++) {
-            const angle = i * angleStep;
+            const angle = randomOffset + i * angleStep;
             const dist = Systems.CLEARING_RADIUS + Systems.BORDERLANDS_WIDTH / 2;
             const pos = new Vector2(
                 this.center.x + Math.cos(angle) * dist,
                 this.center.y + Math.sin(angle) * dist
             );
-            this.hunters.push(new Piece(pos, '#27ae60'));
+            
+            // Pass stats to constructor
+            this.hunters.push(new Piece(pos, '#27ae60', false, shuffledProfiles[i]));
         }
         
         this.turn = 'TIGER';
@@ -45,7 +62,6 @@ export class Game {
         this.processingAction = false;
         this.aiThinking = false;
         
-        // Reset stats
         this.stats = {
             totalMoves: 0,
             pounceChains: [],
@@ -76,14 +92,14 @@ export class Game {
             this.turnIndicator.textContent = 'Tiger Thinking...';
         } else {
             const turnText = `${this.turn === 'TIGER' ? 'Tiger' : 'Hunters'}'s Turn`;
+            const totalMovable = this.hunters.filter(h => !h.incapacitated && !h.isRemoved).length;
             const movesLeft = this.turn === 'HUNTERS' 
-                ? ` (${this.hunters.filter(h => !h.incapacitated && !h.isRemoved && !h.hasMoved).length} of ${this.hunters.filter(h => !h.incapacitated && !h.isRemoved).length} Hunters available)` 
+                ? ` (${this.hunters.filter(h => !h.hasMoved && !h.incapacitated && !h.isRemoved).length} of ${totalMovable} Hunters available)` 
                 : '';
             this.turnIndicator.textContent = turnText + movesLeft;
         }
     }
     
-    // NEW: Save game state
     getState() {
         return JSON.stringify({
             tiger: { pos: this.tiger.pos, incapacitated: this.tiger.incapacitated },
@@ -91,7 +107,15 @@ export class Game {
                 pos: h.pos,
                 incapacitated: h.incapacitated,
                 isRemoved: h.isRemoved,
-                borderlandsTurns: h.borderlandsTurns
+                borderlandsTurns: h.borderlandsTurns,
+                hasMoved: h.hasMoved,
+                stats: {
+                    diameter: h.radius * 2,
+                    borderlandsTolerance: h.borderlandsTolerance,
+                    canMoveAfterRescue: h.canMoveAfterRescue,
+                    canMoveAfterBeingRescued: h.canMoveAfterBeingRescued,
+                    hunterType: h.hunterType
+                }
             })),
             turn: this.turn,
             moveHistory: this.moveHistory,
@@ -99,22 +123,29 @@ export class Game {
         });
     }
     
-    // NEW: Load game state
     loadState(stateString) {
         try {
             const state = JSON.parse(stateString);
             
-            // Restore tiger
             this.tiger.pos = new Vector2(state.tiger.pos.x, state.tiger.pos.y);
             this.tiger.incapacitated = state.tiger.incapacitated;
             
-            // Restore hunters
             state.hunters.forEach((h, i) => {
                 if (this.hunters[i]) {
                     this.hunters[i].pos = new Vector2(h.pos.x, h.pos.y);
                     this.hunters[i].incapacitated = h.incapacitated;
                     this.hunters[i].isRemoved = h.isRemoved;
                     this.hunters[i].borderlandsTurns = h.borderlandsTurns || 0;
+                    this.hunters[i].hasMoved = h.hasMoved || false;
+                    
+                    // Restore stats
+                    if (h.stats) {
+                        this.hunters[i].radius = h.stats.diameter ? h.stats.diameter / 2 : 15;
+                        this.hunters[i].borderlandsTolerance = h.stats.borderlandsTolerance || 3;
+                        this.hunters[i].canMoveAfterRescue = h.stats.canMoveAfterRescue || false;
+                        this.hunters[i].canMoveAfterBeingRescued = h.stats.canMoveAfterBeingRescued || false;
+                        this.hunters[i].hunterType = h.stats.hunterType || 'standard';
+                    }
                 }
             });
             
@@ -151,27 +182,29 @@ export class Game {
     }
     
     movePiece(piece, targetPos) {
-        // NEW: Input validation
         if (!(targetPos instanceof Vector2) || isNaN(targetPos.x) || isNaN(targetPos.y)) {
             console.error("Invalid target position:", targetPos);
             return;
         }
         
-        // NEW: Race condition protection
         if (this.processingAction) {
             console.log("Move blocked: already processing");
             return;
         }
         
-        const dist = piece.pos.distanceTo(targetPos);
-        console.log(`movePiece: ${piece.isTiger ? 'TIGER' : 'HUNTER'} moving ${dist.toFixed(2)}px`);
+        if (this.winner || this.isAnimating()) {
+            console.log("movePiece blocked: winner or animating");
+            return;
+        }
+        
+        let dist = piece.pos.distanceTo(targetPos);
         
         if (piece.isTiger) {
-            // CRITICAL FIX: Clamp distance instead of blocking
             if (dist > Systems.HAND_SPAN + 0.01) {
                 console.log(`Tiger move exceeded ${Systems.HAND_SPAN}px, clamping to max range`);
                 const dir = targetPos.sub(piece.pos);
                 targetPos = piece.pos.add(dir.normalize().mult(Systems.HAND_SPAN));
+                dist = Systems.HAND_SPAN;
             }
             
             const maxCenterDist = Systems.CLEARING_RADIUS - piece.radius;
@@ -295,9 +328,13 @@ export class Game {
         
         setTimeout(() => {
             hunter.updateAnimation(hunter.animationEnd);
-            hunter.hasMoved = true;
-            hunter.moveOrder = this.huntersMoved.size + 1;
-            this.huntersMoved.add(hunter);
+            
+            // IMPROVED: Respect canMoveAfterRescue flag
+            if (!rescued || !hunter.canMoveAfterRescue) {
+                hunter.hasMoved = true;
+                hunter.moveOrder = this.huntersMoved.size + 1;
+                this.huntersMoved.add(hunter);
+            }
             console.log(`Hunter moved. huntersMoved.size: ${this.huntersMoved.size}`);
             
             const rescued = this.hunters.find(h => 
@@ -308,8 +345,12 @@ export class Game {
                 console.log("RESCUE occurred!");
                 rescued.incapacitated = false;
                 rescued.borderlandsTurns = 0;
-                rescued.hasMoved = true;
-                this.huntersMoved.add(rescued);
+                
+                // IMPROVED: Respect canMoveAfterBeingRescued flag
+                if (!rescued.canMoveAfterBeingRescued) {
+                    rescued.hasMoved = true;
+                    this.huntersMoved.add(rescued);
+                }
                 console.log(`Rescued hunter added. huntersMoved.size: ${this.huntersMoved.size}`);
             }
             
@@ -353,7 +394,6 @@ export class Game {
         }, hunter.animationDuration);
     }
     
-    // Tiger AI
     executeTigerAI() {
         console.log("executeTigerAI called!");
         if (this.winner || this.turn !== 'TIGER' || !this.tigerAIEnabled) {
@@ -392,7 +432,6 @@ export class Game {
                 this.tiger.pos.y + Math.sin(angle) * Systems.HAND_SPAN
             );
             
-            // Clamp to Clearing boundary
             const maxCenterDist = Systems.CLEARING_RADIUS - this.tiger.radius;
             let finalPos = targetPos.clone();
             let currentDistFromCenter = targetPos.distanceTo(this.center);
@@ -404,14 +443,19 @@ export class Game {
                 );
             }
             
-            // Ensure we don't exceed HAND_SPAN after boundary clamping
             const dir = finalPos.sub(this.tiger.pos);
             const clampedDist = Math.min(dir.distanceTo(new Vector2(0, 0)), Systems.HAND_SPAN);
             const normalized = clampedDist > 0 ? dir.mult(1 / dir.distanceTo(new Vector2(0, 0))) : new Vector2(0, 0);
             finalPos = this.tiger.pos.add(normalized.mult(clampedDist));
             
             const chainScore = this.simulatePounceChain(finalPos);
-            possibleTargets.push({ pos: finalPos, score: chainScore });
+            
+            // IMPROVED: Prefer center and larger targets
+            const centerBonus = (Systems.CLEARING_RADIUS - finalPos.distanceTo(this.center)) * 0.01;
+            const randomBonus = Math.random() * 0.1;
+            const finalScore = chainScore + centerBonus + randomBonus;
+            
+            possibleTargets.push({ pos: finalPos, score: finalScore });
         }
         
         possibleTargets.sort((a, b) => b.score - a.score);
@@ -420,11 +464,17 @@ export class Game {
         return possibleTargets[0]?.pos || null;
     }
     
-    // IMPROVED: Use temporary objects instead of mutating state
+    // IMPROVED: Use temporary objects for safe simulation
     simulatePounceChain(targetPos) {
         const tempTiger = new Piece(this.tiger.pos.clone(), this.tiger.color, true);
         const tempHunters = this.hunters.map(h => {
-            const temp = new Piece(h.pos.clone(), h.color, false);
+            const temp = new Piece(h.pos.clone(), h.color, false, {
+                diameter: h.radius * 2,
+                borderlandsTolerance: h.borderlandsTolerance,
+                canMoveAfterRescue: h.canMoveAfterRescue,
+                canMoveAfterBeingRescued: h.canMoveAfterBeingRescued,
+                hunterType: h.hunterType
+            });
             temp.incapacitated = h.incapacitated;
             temp.isRemoved = h.isRemoved;
             return temp;
@@ -460,11 +510,10 @@ export class Game {
             inBorderlands: Systems.isInBorderlands(h.pos, this.center)
         }));
         this.moveHistory.push(positions);
-        // CRITICAL: Keep 3 turns for new camping penalty logic
         if (this.moveHistory.length > 3) this.moveHistory.shift();
     }
     
-    // IMPROVED: 3-turn camping penalty instead of 2
+    // IMPROVED: Use per-Hunter borderlandsTolerance
     enforceCampingPenalty() {
         if (this.moveHistory.length < 3) return;
         
@@ -482,16 +531,19 @@ export class Game {
             const posInTurn2 = turn2.find(p => p.hunter === hunter);
             const posInTurn3 = turn3.find(p => p.hunter === hunter);
             
-            // Must be in Borderlands for 3 CONSECUTIVE turns
-            if (posInTurn1?.inBorderlands && posInTurn2?.inBorderlands && posInTurn3?.inBorderlands) {
-                console.log(`Hunter removed for camping 3 turns!`);
+            // Check against hunter's personal tolerance
+            const tolerance = hunter.borderlandsTolerance;
+            const turnsInBorderlands = [posInTurn1, posInTurn2, posInTurn3].filter(p => p?.inBorderlands).length;
+            
+            if (turnsInBorderlands >= tolerance) {
+                console.log(`Hunter ${this.hunters.indexOf(hunter)} removed for camping ${tolerance} turns!`);
                 hunter.isRemoved = true;
                 this.stats.campingRemovals++;
             }
         }
     }
     
-    // Get camping warning status for a hunter
+    // IMPROVED: Return warning level (0=none, 1=warn, 2=final)
     getCampingWarning(hunter) {
         if (this.moveHistory.length < 2 || hunter.incapacitated || hunter.isRemoved) return 0;
         
@@ -504,8 +556,14 @@ export class Game {
         const inTurn1 = turn1.find(p => p.hunter === hunter)?.inBorderlands;
         const inTurn2 = turn2.find(p => p.hunter === hunter)?.inBorderlands;
         
-        if (inTurn1 && inTurn2) return 2; // 2 turns, will be removed next
-        if (inTurn2 && !inTurn1) return 1; // 1 turn so far
+        const tolerance = hunter.borderlandsTolerance;
+        
+        if (inTurn1 && inTurn2) {
+            return tolerance === 3 ? 2 : (tolerance === 2 ? 2 : 1);
+        }
+        if (inTurn2 && !inTurn1) {
+            return tolerance === 2 ? 1 : 0;
+        }
         
         return 0;
     }
