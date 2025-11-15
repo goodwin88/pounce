@@ -52,9 +52,10 @@ export class Piece {
         this.canMoveAfterRescue = stats.canMoveAfterRescue || false;
         this.canMoveAfterBeingRescued = stats.canMoveAfterBeingRescued || false;
         this.hunterType = stats.hunterType || 'standard';
-        
-        // NEW: Hunter specialization properties
         this.hunterSpecials = stats.hunterSpecials || null;
+        
+        // NEW: Tiger range multiplier
+        this.tigerRangeMultiplier = stats.tigerRangeMultiplier || 1.0;
         
         this.borderlandsTurns = 0;
         this.hasMoved = false;
@@ -70,14 +71,23 @@ export class Piece {
         this.animationDuration = 300;
     }
     
-    // NEW: Get move range based on hunter type
+    // NEW: Get Tiger's dynamic range
+    getTigerRange() {
+        if (!this.isTiger) return 0;
+        const diameter = this.radius * 2;
+        return diameter * this.tigerRangeMultiplier;
+    }
+    
+    // MODIFIED: Use dynamic range for Tigers
     getMoveRange() {
-        if (this.isTiger) return 150;
+        if (this.isTiger) {
+            return this.getTigerRange();
+        }
         const special = this.hunterSpecials?.[this.hunterType];
         return special ? 150 * special.moveMultiplier : 150;
     }
     
-    // NEW: Get rescue range (medic special)
+    // NEW: Get rescue range for medics
     getRescueRange() {
         if (this.isTiger) return 0;
         const special = this.hunterSpecials?.[this.hunterType];
