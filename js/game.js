@@ -24,10 +24,8 @@ export class Game {
         this.hunters = [];
         const angleStep = (Math.PI * 2) / 5;
         
-        // NEW: Random angular offset for initial placement
         const randomOffset = Math.random() * Math.PI * 2;
         
-        // NEW: Define Hunter stat profiles
         const hunterProfiles = [
             { diameter: 25, borderlandsTolerance: 4, canMoveAfterRescue: false, canMoveAfterBeingRescued: false, hunterType: 'standard' },
             { diameter: 20, borderlandsTolerance: 2, canMoveAfterRescue: true, canMoveAfterBeingRescued: true, hunterType: 'scout' },
@@ -36,7 +34,6 @@ export class Game {
             { diameter: 22, borderlandsTolerance: 3, canMoveAfterRescue: false, canMoveAfterBeingRescued: true, hunterType: 'standard' }
         ];
         
-        // Shuffle profiles randomly
         const shuffledProfiles = hunterProfiles.sort(() => Math.random() - 0.5);
         
         for (let i = 0; i < 5; i++) {
@@ -47,7 +44,6 @@ export class Game {
                 this.center.y + Math.sin(angle) * dist
             );
             
-            // Pass stats to constructor
             this.hunters.push(new Piece(pos, '#27ae60', false, shuffledProfiles[i]));
         }
         
@@ -138,7 +134,6 @@ export class Game {
                     this.hunters[i].borderlandsTurns = h.borderlandsTurns || 0;
                     this.hunters[i].hasMoved = h.hasMoved || false;
                     
-                    // Restore stats
                     if (h.stats) {
                         this.hunters[i].radius = h.stats.diameter ? h.stats.diameter / 2 : 15;
                         this.hunters[i].borderlandsTolerance = h.stats.borderlandsTolerance || 3;
@@ -329,7 +324,12 @@ export class Game {
         setTimeout(() => {
             hunter.updateAnimation(hunter.animationEnd);
             
-            // IMPROVED: Respect canMoveAfterRescue flag
+            // FIX: Check for rescue FIRST
+            const rescued = this.hunters.find(h => 
+                h !== hunter && h.incapacitated && h.pos.distanceTo(hunter.pos) <= h.radius + hunter.radius
+            );
+            
+            // FIX: Only mark as moved if DIDN'T rescue OR can't move after rescue
             if (!rescued || !hunter.canMoveAfterRescue) {
                 hunter.hasMoved = true;
                 hunter.moveOrder = this.huntersMoved.size + 1;
@@ -337,16 +337,12 @@ export class Game {
             }
             console.log(`Hunter moved. huntersMoved.size: ${this.huntersMoved.size}`);
             
-            const rescued = this.hunters.find(h => 
-                h !== hunter && h.incapacitated && h.pos.distanceTo(hunter.pos) <= h.radius + hunter.radius
-            );
-            
             if (rescued) {
                 console.log("RESCUE occurred!");
                 rescued.incapacitated = false;
                 rescued.borderlandsTurns = 0;
                 
-                // IMPROVED: Respect canMoveAfterBeingRescued flag
+                // FIX: Only mark rescued as moved if can't move after being rescued
                 if (!rescued.canMoveAfterBeingRescued) {
                     rescued.hasMoved = true;
                     this.huntersMoved.add(rescued);
@@ -450,7 +446,6 @@ export class Game {
             
             const chainScore = this.simulatePounceChain(finalPos);
             
-            // IMPROVED: Prefer center and larger targets
             const centerBonus = (Systems.CLEARING_RADIUS - finalPos.distanceTo(this.center)) * 0.01;
             const randomBonus = Math.random() * 0.1;
             const finalScore = chainScore + centerBonus + randomBonus;
@@ -464,7 +459,6 @@ export class Game {
         return possibleTargets[0]?.pos || null;
     }
     
-    // IMPROVED: Use temporary objects for safe simulation
     simulatePounceChain(targetPos) {
         const tempTiger = new Piece(this.tiger.pos.clone(), this.tiger.color, true);
         const tempHunters = this.hunters.map(h => {
@@ -513,7 +507,6 @@ export class Game {
         if (this.moveHistory.length > 3) this.moveHistory.shift();
     }
     
-    // IMPROVED: Use per-Hunter borderlandsTolerance
     enforceCampingPenalty() {
         if (this.moveHistory.length < 3) return;
         
@@ -531,7 +524,6 @@ export class Game {
             const posInTurn2 = turn2.find(p => p.hunter === hunter);
             const posInTurn3 = turn3.find(p => p.hunter === hunter);
             
-            // Check against hunter's personal tolerance
             const tolerance = hunter.borderlandsTolerance;
             const turnsInBorderlands = [posInTurn1, posInTurn2, posInTurn3].filter(p => p?.inBorderlands).length;
             
@@ -543,7 +535,6 @@ export class Game {
         }
     }
     
-    // IMPROVED: Return warning level (0=none, 1=warn, 2=final)
     getCampingWarning(hunter) {
         if (this.moveHistory.length < 2 || hunter.incapacitated || hunter.isRemoved) return 0;
         
@@ -557,13 +548,10 @@ export class Game {
         const inTurn2 = turn2.find(p => p.hunter === hunter)?.inBorderlands;
         
         const tolerance = hunter.borderlandsTolerance;
+        const turnsInBorderlands = [inTurn1, inTurn2].filter(Boolean).length;
         
-        if (inTurn1 && inTurn2) {
-            return tolerance === 3 ? 2 : (tolerance === 2 ? 2 : 1);
-        }
-        if (inTurn2 && !inTurn1) {
-            return tolerance === 2 ? 1 : 0;
-        }
+        if (turnsInBorderlands >= tolerance - 1) return 2;
+        if (turnsInBorderlands >= tolerance - 2 && tolerance > 2) return 1;
         
         return 0;
     }
