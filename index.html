@@ -14,13 +14,24 @@
             <div id="status">Initializing game...</div>
             
             <div id="difficulty-selector">
-                <label for="difficulty">Difficulty:</label>
+                <label for="difficulty">Difficulty (Tiger Size):</label>
                 <select id="difficulty">
-                    <option value="1">⭐ Beginner (Tiger: 20%)</option>
-                    <option value="2">⭐⭐ Easy (Tiger: 40%)</option>
-                    <option value="3" selected>⭐⭐⭐ Normal (Tiger: 60%)</option>
-                    <option value="4">⭐⭐⭐⭐ Hard (Tiger: 80%)</option>
-                    <option value="5">⭐⭐⭐⭐⭐ Expert (Tiger: 100%)</option>
+                    <option value="1">⭐ Beginner (20% size)</option>
+                    <option value="2">⭐⭐ Easy (40% size)</option>
+                    <option value="3" selected>⭐⭐⭐ Normal (60% size)</option>
+                    <option value="4">⭐⭐⭐⭐ Hard (80% size)</option>
+                    <option value="5">⭐⭐⭐⭐⭐ Expert (100% size)</option>
+                </select>
+            </div>
+
+            <div id="tiger-range-selector">
+                <label for="tigerRange">Tiger Reach:</label>
+                <select id="tigerRange">
+                    <option value="0.5">Short (0.5× size)</option>
+                    <option value="0.7">Compact (0.7× size)</option>
+                    <option value="1.0" selected>Standard (1× size)</option>
+                    <option value="1.3">Long (1.3× size)</option>
+                    <option value="1.5">Extended (1.5× size)</option>
                 </select>
             </div>
             
@@ -44,6 +55,7 @@
                 <p><strong>8. Camp warning</strong> Orange ring = 2 turns in Borderlands</p>
                 <p><strong>9. Camp penalty</strong> 3 turns in Borderlands = removal</p>
                 <p><strong>10. Hunter Types:</strong> S=Scout, V=Veteran, M=Medic</p>
+                <p><strong>11. Tiger Range:</strong> Scales with size × multiplier</p>
             </div>
         </div>
     </div>
