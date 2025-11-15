@@ -53,8 +53,6 @@ export class Piece {
         this.canMoveAfterBeingRescued = stats.canMoveAfterBeingRescued || false;
         this.hunterType = stats.hunterType || 'standard';
         this.hunterSpecials = stats.hunterSpecials || null;
-        
-        // NEW: Tiger range multiplier
         this.tigerRangeMultiplier = stats.tigerRangeMultiplier || 1.0;
         
         this.borderlandsTurns = 0;
@@ -71,30 +69,24 @@ export class Piece {
         this.animationDuration = 300;
     }
     
-    // NEW: Get Tiger's dynamic range
     getTigerRange() {
         if (!this.isTiger) return 0;
         const diameter = this.radius * 2;
         return diameter * this.tigerRangeMultiplier;
     }
     
-    // MODIFIED: Use dynamic range for Tigers
     getMoveRange() {
-        if (this.isTiger) {
-            return this.getTigerRange();
-        }
+        if (this.isTiger) return this.getTigerRange();
         const special = this.hunterSpecials?.[this.hunterType];
         return special ? 150 * special.moveMultiplier : 150;
     }
     
-    // NEW: Get rescue range for medics
     getRescueRange() {
         if (this.isTiger) return 0;
         const special = this.hunterSpecials?.[this.hunterType];
         return special?.rescueRange || 0;
     }
     
-    // NEW: Check if veteran (immune to camping)
     isVeteran() {
         return this.hunterType === 'veteran';
     }
@@ -183,11 +175,9 @@ export class Piece {
             ctx.stroke();
         }
         
-        // Draw hunter type symbol
         if (!this.isTiger && !this.incapacitated && !this.isRemoved) {
             const special = this.hunterSpecials?.[this.hunterType];
             const letter = special?.symbol || '';
-            
             if (letter) {
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
                 ctx.font = `bold ${this.radius}px Arial`;
@@ -208,5 +198,23 @@ export class Piece {
             ctx.textAlign = 'left';
             ctx.textBaseline = 'alphabetic';
         }
+    }
+}
+
+// NEW: Terrain obstacle class
+export class Terrain {
+    constructor(center, width, height, angle) {
+        this.center = center;
+        this.width = width;
+        this.height = height;
+        this.angle = angle;
+    }
+    
+    containsPoint(point) {
+        const cos = Math.cos(-this.angle);
+        const sin = Math.sin(-this.angle);
+        const localX = (point.x - this.center.x) * cos - (point.y - this.center.y) * sin;
+        const localY = (point.x - this.center.x) * sin + (point.y - this.center.y) * cos;
+        return Math.abs(localX) <= this.width / 2 && Math.abs(localY) <= this.height / 2;
     }
 }
