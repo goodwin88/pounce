@@ -44,27 +44,27 @@ export class Renderer {
         
         this.ctx.fillStyle = '#f39c12';
         this.ctx.font = 'bold 14px Arial';
-        this.ctx.fillText(`Move: ${range}px`, 10, 80);
+        this.ctx.fillText(`Move: ${Math.round(range)}px`, 10, 80);
     }
     
-    drawPounceRange(tigerPos, hunters, center) {
+    drawPounceRange(tigerPos, hunters, center, range) {
         this.ctx.strokeStyle = 'rgba(231, 76, 60, 0.3)';
         this.ctx.lineWidth = 2;
         this.ctx.setLineDash([2, 4]);
         this.ctx.beginPath();
-        this.ctx.arc(tigerPos.x, tigerPos.y, Systems.HAND_SPAN, 0, Math.PI * 2);
+        this.ctx.arc(tigerPos.x, tigerPos.y, range, 0, Math.PI * 2);
         this.ctx.stroke();
         this.ctx.setLineDash([]);
         
         this.ctx.fillStyle = '#e74c3c';
         this.ctx.font = '12px Arial';
-        this.ctx.fillText('Pounce: 150px', 10, 100);
+        this.ctx.fillText(`Pounce: ${Math.round(range)}px`, 10, 100);
     }
     
-    drawRoarEffect(tigerPos, hunters, center) {
+    drawRoarEffect(tigerPos, hunters, center, range) {
         const threatened = hunters.filter(h => 
             !h.incapacitated && !h.isRemoved && 
-            Systems.distance(tigerPos, h.pos) <= Systems.HAND_SPAN &&
+            Systems.distance(tigerPos, h.pos) <= range &&
             Systems.isInClearing(h.pos, center)
         );
         
@@ -74,7 +74,7 @@ export class Renderer {
         this.ctx.strokeStyle = `rgba(231, 76, 60, ${pulse})`;
         this.ctx.lineWidth = 4;
         this.ctx.beginPath();
-        this.ctx.arc(tigerPos.x, tigerPos.y, Systems.HAND_SPAN, 0, Math.PI * 2);
+        this.ctx.arc(tigerPos.x, tigerPos.y, range, 0, Math.PI * 2);
         this.ctx.stroke();
         
         threatened.forEach(h => {
@@ -140,7 +140,7 @@ export class Renderer {
             this.ctx.stroke();
             this.ctx.setLineDash([]);
             
-            // NEW: Show veteran immunity
+            // Show veteran immunity
             if (hunter.isVeteran()) {
                 this.ctx.fillStyle = '#3498db';
                 this.ctx.font = 'bold 10px Arial';
@@ -188,38 +188,17 @@ export class Renderer {
         this.ctx.restore();
     }
     
-    drawPieces(pieces, gameState) {
-        pieces.forEach(p => {
-            if (!p.isTiger && p.hasMoved && !gameState.winner) {
-                this.ctx.save();
-                this.ctx.globalAlpha = 0.5;
-            }
-            
-            p.draw(this.ctx);
-            
-            if (!p.isTiger && p.hasMoved && !p.incapacitated && !p.isRemoved) {
-                this.ctx.fillStyle = '#2ecc71';
-                this.ctx.font = 'bold 14px Arial';
-                this.ctx.textAlign = 'center';
-                this.ctx.fillText('✓', p.pos.x, p.pos.y);
-                this.ctx.textAlign = 'left';
-            }
-            
-            if (!p.isTiger && p.hasMoved && !gameState.winner) {
-                this.ctx.restore();
-            }
-        });
-    }
-    
-    drawStats(stats, difficulty) {
+    drawStats(stats, difficultyName, rangeName) {
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        this.ctx.fillRect(this.canvas.width - 200, 10, 190, 115);
+        this.ctx.fillRect(this.canvas.width - 200, 10, 190, 120);
         
         this.ctx.fillStyle = '#ecf0f1';
         this.ctx.font = '12px Arial';
         this.ctx.textAlign = 'right';
         let y = 30;
-        this.ctx.fillText(`Difficulty: ${difficulty}`, this.canvas.width - 20, y);
+        this.ctx.fillText(`Difficulty: ${difficultyName}`, this.canvas.width - 20, y);
+        y += 15;
+        this.ctx.fillText(`Tiger Range: ${rangeName}`, this.canvas.width - 20, y);
         y += 15;
         this.ctx.fillText(`Total Moves: ${stats.totalMoves}`, this.canvas.width - 20, y);
         y += 15;
@@ -237,8 +216,15 @@ export class Renderer {
         this.clear();
         this.drawZones();
         
+        const tigerRange = gameState.tiger?.getTigerRange?.() || Systems.HAND_SPAN;
+        
         if (gameState.roarActive && gameState.turn === 'TIGER') {
-            this.drawRoarEffect(gameState.tiger.pos, gameState.hunters, this.center);
+            this.drawRoarEffect(gameState.tiger.pos, gameState.hunters, gameState.center, tigerRange);
+        }
+        
+        // Use dynamic pounce range
+        if ((gameState.selectedPiece?.isTiger || gameState.roarActive || gameState.turn === 'TIGER')) {
+            this.drawPounceRange(gameState.tiger.pos, gameState.hunters, gameState.center, tigerRange);
         }
         
         if (gameState.turn === 'HUNTERS' && !gameState.winner && gameState.gameInstance) {
@@ -249,23 +235,16 @@ export class Renderer {
             this.drawVictoryTriangle(gameState.winningHunters);
         }
         
-        if ((gameState.selectedPiece?.isTiger || gameState.roarActive || gameState.turn === 'TIGER')) {
-            this.drawPounceRange(gameState.tiger.pos, gameState.hunters, this.center);
-        }
-        
-        if (gameState.selectedPiece) {
-            const range = gameState.selectedPiece.getMoveRange();
-            this.drawRangeIndicator(gameState.selectedPiece.pos, range);
-        }
-        
         if (gameState.ghostPreview && !gameState.isAnimating) {
             this.drawGhostPreview(gameState.ghostPreview.piece, gameState.ghostPreview.position);
         }
         
         this.drawPieces(pieces, gameState);
         
-        if (gameState.stats) {
-            this.drawStats(gameState.stats, Systems.DIFFICULTY_LEVELS[gameState.gameInstance?.difficulty || 3].name);
+        if (gameState.stats && gameState.gameInstance) {
+            const diffName = Systems.DIFFICULTY_LEVELS[gameState.gameInstance.difficulty].name;
+            const rangeName = Systems.TIGER_RANGE_MULTIPLIERS[gameState.gameInstance.tigerRangeMultiplier].name;
+            this.drawStats(gameState.stats, diffName, rangeName);
         }
     }
 }
