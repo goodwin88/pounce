@@ -92,7 +92,6 @@ export class Renderer {
         this.ctx.textAlign = 'left';
     }
     
-    // IMPROVED: Draw victory triangle with enhanced visual feedback
     drawVictoryTriangle(hunters) {
         if (!hunters || hunters.length !== 3) return;
         
@@ -108,7 +107,6 @@ export class Renderer {
         this.ctx.lineWidth = 4;
         this.ctx.stroke();
         
-        // NEW: Highlight Hunters that are in range
         hunters.forEach(h => {
             if (Systems.distance(h.pos, this.center) <= Systems.HAND_SPAN) {
                 this.ctx.strokeStyle = '#2ecc71';
@@ -119,7 +117,6 @@ export class Renderer {
             }
         });
         
-        // NEW: Victory message overlay
         this.ctx.fillStyle = '#2ecc71';
         this.ctx.font = 'bold 48px Arial';
         this.ctx.textAlign = 'center';
@@ -127,14 +124,14 @@ export class Renderer {
         this.ctx.textAlign = 'left';
     }
     
-    // NEW: Draw camping warnings
-    drawCampingWarnings(game) {
-        game.hunters.forEach(hunter => {
-            const warningLevel = game.getCampingWarning(hunter);
+    // CRITICAL FIX: Now receives actual Game instance
+    drawCampingWarnings(gameInstance) {
+        gameInstance.hunters.forEach(hunter => {
+            const warningLevel = gameInstance.getCampingWarning(hunter);
             if (warningLevel === 0) return;
             
             const pulse = Math.sin(Date.now() / 150) * 0.3 + 0.7;
-            const color = warningLevel === 2 ? '#e67e22' : '#f39c12'; // Orange vs yellow
+            const color = warningLevel === 2 ? '#e67e22' : '#f39c12';
             
             this.ctx.strokeStyle = color;
             this.ctx.lineWidth = 3;
@@ -144,7 +141,6 @@ export class Renderer {
             this.ctx.stroke();
             this.ctx.setLineDash([]);
             
-            // Warning text
             this.ctx.fillStyle = color;
             this.ctx.font = 'bold 10px Arial';
             this.ctx.textAlign = 'center';
@@ -185,18 +181,15 @@ export class Renderer {
         this.ctx.restore();
     }
     
-    // IMPROVED: Draw pieces with dimmed moved Hunters
     drawPieces(pieces, gameState) {
         pieces.forEach(p => {
-            // Dim moved Hunters
             if (!p.isTiger && p.hasMoved && !gameState.winner) {
                 this.ctx.save();
-                this.ctx.globalAlpha = 0.5; // 50% opacity for moved Hunters
+                this.ctx.globalAlpha = 0.5;
             }
             
             p.draw(this.ctx);
             
-            // Draw checkmark on moved Hunters
             if (!p.isTiger && p.hasMoved && !p.incapacitated && !p.isRemoved) {
                 this.ctx.fillStyle = '#2ecc71';
                 this.ctx.font = 'bold 14px Arial';
@@ -211,6 +204,26 @@ export class Renderer {
         });
     }
     
+    drawStats(stats) {
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.fillRect(this.canvas.width - 200, 10, 190, 100);
+        
+        this.ctx.fillStyle = '#ecf0f1';
+        this.ctx.font = '12px Arial';
+        this.ctx.textAlign = 'right';
+        let y = 30;
+        this.ctx.fillText(`Total Moves: ${stats.totalMoves}`, this.canvas.width - 20, y);
+        y += 15;
+        this.ctx.fillText(`Pounce Chains: ${stats.pounceChains.length}`, this.canvas.width - 20, y);
+        y += 15;
+        this.ctx.fillText(`Camping Removals: ${stats.campingRemovals}`, this.canvas.width - 20, y);
+        y += 15;
+        this.ctx.fillText(`Avg Chain Length: ${stats.pounceChains.length > 0 
+            ? (stats.pounceChains.reduce((a, c) => a + c.huntersPounced, 0) / stats.pounceChains.length).toFixed(1)
+            : 0}`, this.canvas.width - 20, y);
+        this.ctx.textAlign = 'left';
+    }
+    
     draw(pieces, gameState = {}) {
         this.clear();
         this.drawZones();
@@ -219,9 +232,9 @@ export class Renderer {
             this.drawRoarEffect(gameState.tiger.pos, gameState.hunters, this.center);
         }
         
-        // Draw camping warnings BEFORE other elements
-        if (gameState.turn === 'HUNTERS' && !gameState.winner) {
-            this.drawCampingWarnings(gameState);
+        // CRITICAL FIX: Pass gameInstance to drawCampingWarnings
+        if (gameState.turn === 'HUNTERS' && !gameState.winner && gameState.gameInstance) {
+            this.drawCampingWarnings(gameState.gameInstance);
         }
         
         if (gameState.winner === 'HUNTERS' && gameState.winningHunters) {
@@ -242,30 +255,8 @@ export class Renderer {
         
         this.drawPieces(pieces, gameState);
         
-        // Draw statistics overlay
         if (gameState.stats) {
             this.drawStats(gameState.stats);
         }
-    }
-    
-    // NEW: Draw statistics
-    drawStats(stats) {
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        this.ctx.fillRect(this.canvas.width - 200, 10, 190, 100);
-        
-        this.ctx.fillStyle = '#ecf0f1';
-        this.ctx.font = '12px Arial';
-        this.ctx.textAlign = 'right';
-        let y = 30;
-        this.ctx.fillText(`Total Moves: ${stats.totalMoves}`, this.canvas.width - 20, y);
-        y += 15;
-        this.ctx.fillText(`Pounce Chains: ${stats.pounceChains.length}`, this.canvas.width - 20, y);
-        y += 15;
-        this.ctx.fillText(`Camping Removals: ${stats.campingRemovals}`, this.canvas.width - 20, y);
-        y += 15;
-        this.ctx.fillText(`Avg Chain Length: ${stats.pounceChains.length > 0 
-            ? (stats.pounceChains.reduce((a, c) => a + c.huntersPounced, 0) / stats.pounceChains.length).toFixed(1)
-            : 0}`, this.canvas.width - 20, y);
-        this.ctx.textAlign = 'left';
     }
 }
