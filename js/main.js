@@ -19,7 +19,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    // NEW: Pass both difficulty and range multiplier
     const game = new Game(
         canvas, 
         turnIndicator, 
@@ -35,10 +34,17 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastTime = performance.now();
     let keyboardSelectedHunterIndex = -1;
 
-    // Difficulty selector
+    // Randomize on load
+    const initialRandDiff = 1 + Math.floor(Math.random() * 5);
+    const initialRandRange = [0.5, 0.7, 1.0, 1.3, 1.5][Math.floor(Math.random() * 5)];
+    game.difficulty = initialRandDiff;
+    game.tigerRangeMultiplier = initialRandRange;
+    difficultySelect.value = initialRandDiff;
+    tigerRangeSelect.value = initialRandRange;
+    statusDiv.textContent = `New Game! Size: ${Systems.DIFFICULTY_LEVELS[initialRandDiff].name}, Range: ${Systems.TIGER_RANGE_MULTIPLIERS[initialRandRange].name}`;
+
     difficultySelect.addEventListener('change', (e) => {
         if (game.isAnimating()) return;
-        
         const newDifficulty = parseInt(e.target.value);
         game.difficulty = newDifficulty;
         game.reset();
@@ -46,10 +52,8 @@ document.addEventListener('DOMContentLoaded', () => {
         game.updateUI();
     });
 
-    // NEW: Tiger range selector
     tigerRangeSelect.addEventListener('change', (e) => {
         if (game.isAnimating()) return;
-        
         const newRange = parseFloat(e.target.value);
         game.tigerRangeMultiplier = newRange;
         game.reset();
@@ -58,7 +62,6 @@ document.addEventListener('DOMContentLoaded', () => {
         game.updateUI();
     });
 
-    // Touch support
     canvas.addEventListener('touchstart', (e) => {
         e.preventDefault();
         const touch = e.touches[0];
@@ -85,7 +88,6 @@ document.addEventListener('DOMContentLoaded', () => {
         canvas.dispatchEvent(mouseEvent);
     });
 
-    // Keyboard support
     document.addEventListener('keydown', (e) => {
         if (game.winner || game.isAnimating()) return;
         
@@ -239,18 +241,31 @@ document.addEventListener('DOMContentLoaded', () => {
     resetBtn.addEventListener('click', () => {
         if (game.isAnimating()) return;
         
-        // Preserve both settings
+        // Randomize both settings
+        const randDiff = 1 + Math.floor(Math.random() * 5);
+        const randRange = [0.5, 0.7, 1.0, 1.3, 1.5][Math.floor(Math.random() * 5)];
+        
+        game.difficulty = randDiff;
+        game.tigerRangeMultiplier = randRange;
+        difficultySelect.value = randDiff;
+        tigerRangeSelect.value = randRange;
+        
+        // Preserve values through reset
         const currentDifficulty = game.difficulty;
         const currentRange = game.tigerRangeMultiplier;
         game.reset();
         game.difficulty = currentDifficulty;
         game.tigerRangeMultiplier = currentRange;
+        
         selectedPiece = null;
         dragPreview = null;
         ghostPreview = null;
         keyboardSelectedHunterIndex = -1;
         game.updateUI();
-        statusDiv.textContent = "Game reset! Tiger will move first.";
+        
+        const diffName = Systems.DIFFICULTY_LEVELS[randDiff].name;
+        const rangeName = Systems.TIGER_RANGE_MULTIPLIERS[randRange].name;
+        statusDiv.textContent = `New Game! Size: ${diffName}, Reach: ${rangeName}`;
         
         if (game.tigerAIEnabled && game.turn === 'TIGER' && !game.winner) {
             setTimeout(() => {
@@ -264,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const state = game.getState();
         localStorage.setItem('pounceSaveGame', state);
         localStorage.setItem('pounceDifficulty', game.difficulty.toString());
-        localStorage.setItem('pounceRange', game.tigerRangeMultiplier.toString()); // NEW
+        localStorage.setItem('pounceRange', game.tigerRangeMultiplier.toString());
         statusDiv.textContent = "Game saved!";
         setTimeout(() => game.updateUI(), 2000);
     });
@@ -311,8 +326,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
         statsDiv.innerHTML = `
             <strong>Statistics:</strong><br>
-            Difficulty: ${diffName}<br>
-            Tiger Range: ${rangeName}<br>
+            Size: ${diffName}<br>
+            Reach: ${rangeName}<br>
             Total Moves: ${s.totalMoves}<br>
             Pounce Chains: ${s.pounceChains.length}<br>
             Avg Chain: ${avgChain}<br>
@@ -342,7 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderer.drawGhostPreview(ghostPreview.piece, ghostPreview.position);
         }
         
-        // Use dynamic range for range indicator
+        // Use dynamic range for indicator
         if (selectedPiece && !game.isAnimating()) {
             const range = selectedPiece.getMoveRange();
             renderer.drawRangeIndicator(selectedPiece.pos, range);
@@ -358,7 +373,8 @@ document.addEventListener('DOMContentLoaded', () => {
             turn: game.turn,
             stats: game.stats,
             gameInstance: game,
-            equidistantChoice: game.equidistantChoice
+            equidistantChoice: game.equidistantChoice,
+            terrain: game.terrain // NEW
         });
         
         if (selectedPiece && dragPreview && !game.isAnimating()) {
@@ -377,8 +393,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     game.updateUI();
-    statusDiv.textContent = "Game ready! Size=60%, Range=Standard. Control the Hunters. (Tab to cycle, Arrows to move)";
-    console.log("Game initialized. AI Enabled:", game.tigerAIEnabled, "Starting turn:", game.turn, "Difficulty:", game.difficulty, "Range:", game.tigerRangeMultiplier);
+    statusDiv.textContent = "Game ready! Tiger is automated. Gray terrain is impassable.";
+    console.log("Game initialized. AI Enabled:", game.tigerAIEnabled, "Starting turn:", game.turn);
     
     if (game.tigerAIEnabled && game.turn === 'TIGER' && !game.winner) {
         setTimeout(() => {
