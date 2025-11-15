@@ -4,6 +4,23 @@ export const HAND_SPAN = 150;
 export const CLEARING_RADIUS = 300;
 export const BORDERLANDS_WIDTH = HAND_SPAN;
 
+// NEW: Difficulty scaling constants
+export const DIFFICULTY_LEVELS = {
+    1: { name: '⭐ Beginner', multiplier: 0.2 },
+    2: { name: '⭐⭐ Easy', multiplier: 0.4 },
+    3: { name: '⭐⭐⭐ Normal', multiplier: 0.6 },
+    4: { name: '⭐⭐⭐⭐ Hard', multiplier: 0.8 },
+    5: { name: '⭐⭐⭐⭐⭐ Expert', multiplier: 1.0 }
+};
+
+// NEW: Hunter specialization constants
+export const HUNTER_SPECIALS = {
+    scout: { moveMultiplier: 1.5, symbol: 'S' },
+    veteran: { moveMultiplier: 1.0, symbol: 'V', immuneToCamping: true },
+    medic: { moveMultiplier: 1.0, symbol: 'M', rescueRange: 50 },
+    standard: { moveMultiplier: 1.0, symbol: '' }
+};
+
 export function distance(p1, p2) {
     return p1.distanceTo(p2);
 }
@@ -17,7 +34,6 @@ export function isInBorderlands(pos, center) {
     return dist > CLEARING_RADIUS && dist <= CLEARING_RADIUS + BORDERLANDS_WIDTH;
 }
 
-// NEW: Check collision for landing
 export function getLandedHunter(tigerPos, hunters, tigerRadius) {
     return hunters.find(h => 
         !h.incapacitated && !h.isRemoved && 
@@ -25,7 +41,6 @@ export function getLandedHunter(tigerPos, hunters, tigerRadius) {
     );
 }
 
-// NEW: Get hunters within HAND_SPAN (pounce range)
 export function getHuntersInPounceRange(fromPos, hunters, center, range) {
     return hunters
         .filter(h => {
@@ -36,6 +51,17 @@ export function getHuntersInPounceRange(fromPos, hunters, center, range) {
             return dist <= range;
         })
         .sort((a, b) => distance(fromPos, a.pos) - distance(fromPos, b.pos));
+}
+
+// NEW: Get equidistant hunters (within 1px tolerance)
+export function getEquidistantHunters(fromPos, hunters, range) {
+    if (hunters.length === 0) return [];
+    
+    const sorted = getHuntersInPounceRange(fromPos, hunters, fromPos, range);
+    if (sorted.length < 2) return [];
+    
+    const firstDist = distance(fromPos, sorted[0].pos);
+    return sorted.filter(h => Math.abs(distance(fromPos, h.pos) - firstDist) < 1);
 }
 
 export function isPointInTriangle(point, vertices) {
